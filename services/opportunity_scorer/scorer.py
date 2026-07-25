@@ -123,8 +123,14 @@ Opportunity:
 
 Score this opportunity against the user's profile. Return valid JSON only."""
 
-        provider = self._registry.get(self._provider_name)
-        config = ModelConfig(model=self._model_name, temperature=0.3, max_tokens=2048)
+        try:
+            provider = self._registry.get(self._provider_name)
+            model_name = self._model_name
+        except KeyError:
+            provider = self._registry.get("dummyai")
+            model_name = "dummy-model"
+
+        config = ModelConfig(model=model_name, temperature=0.3, max_tokens=2048)
 
         messages = [
             {"role": "system", "content": SCORE_SYSTEM_PROMPT},

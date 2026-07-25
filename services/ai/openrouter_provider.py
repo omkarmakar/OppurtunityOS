@@ -8,11 +8,16 @@ from services.ai.models import AIResponse, ModelConfig
 from services.ai.provider import AIProvider
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+OPENROUTER_FREE_ROUTER = "openrouter/free"
 
 
 class OpenRouterProvider(AIProvider):
     def __init__(self, api_key: str = "", base_url: str = OPENROUTER_BASE_URL) -> None:
-        self._api_key = api_key
+        if not api_key:
+            raise ValueError("OpenRouter API key cannot be empty")
+        self._api_key = api_key.strip()
+        if not self._api_key:
+            raise ValueError("OpenRouter API key is empty or contains only whitespace")
         self._base_url = base_url.rstrip("/")
 
     @property
@@ -22,6 +27,7 @@ class OpenRouterProvider(AIProvider):
     @property
     def supported_models(self) -> list[str]:
         return [
+            OPENROUTER_FREE_ROUTER,
             "openai/gpt-4o-mini:free",
             "openai/gpt-4o:free",
             "anthropic/claude-3.5-sonnet:free",
@@ -38,12 +44,23 @@ class OpenRouterProvider(AIProvider):
             "qwen/qwen3-coder:free",
         ]
 
+    def _resolve_model(self, config: ModelConfig) -> str:
+        model = (config.model or "").strip() or OPENROUTER_FREE_ROUTER
+        if model == OPENROUTER_FREE_ROUTER or model.endswith(":free"):
+            return model
+        msg = (
+            "OpenRouter is restricted to free models only. "
+            f"Use '{OPENROUTER_FREE_ROUTER}' or a model ending with ':free', got '{model}'."
+        )
+        raise ValueError(msg)
+
     async def generate(
         self,
         messages: list[dict[str, str]],
         config: ModelConfig | None = None,
     ) -> AIResponse:
         cfg = config or ModelConfig()
+        model = self._resolve_model(cfg)
 
         headers = {
             "Authorization": f"Bearer {self._api_key}",
@@ -51,7 +68,7 @@ class OpenRouterProvider(AIProvider):
         }
 
         body = {
-            "model": cfg.model,
+            "model": model,
             "messages": messages,
             "temperature": cfg.temperature,
             "max_tokens": cfg.max_tokens,

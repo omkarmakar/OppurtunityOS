@@ -15,6 +15,7 @@ from services.ai import (
     ModelConfig,
     PromptLibrary,
     TokenCounter,
+    OpenRouterProvider,
 )
 from services.ai.models import PromptTemplate
 

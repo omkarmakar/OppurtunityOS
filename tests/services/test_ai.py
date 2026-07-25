@@ -170,18 +170,26 @@ class TestGeminiProvider:
 
 class TestOpenRouterProvider:
     def test_name(self) -> None:
-        p = OpenRouterProvider()
+        p = OpenRouterProvider(api_key="sk-or-test")
         assert p.name == "OpenRouter"
 
     def test_supported_models(self) -> None:
-        p = OpenRouterProvider()
-        assert "openai/gpt-4o-mini" in p.supported_models
+        p = OpenRouterProvider(api_key="sk-or-test")
+        assert "openrouter/free" in p.supported_models
+
+    def test_rejects_non_free_model(self) -> None:
+        p = OpenRouterProvider(api_key="sk-or-test")
+        with pytest.raises(ValueError, match="restricted to free models only"):
+            p._resolve_model(ModelConfig(model="openai/gpt-4o"))
+
+    def test_accepts_free_router_when_model_missing(self) -> None:
+        p = OpenRouterProvider(api_key="sk-or-test")
+        assert p._resolve_model(ModelConfig(model="")) == "openrouter/free"
 
     @pytest.mark.asyncio
     async def test_raises_without_api_key(self) -> None:
-        p = OpenRouterProvider(api_key="")
-        with pytest.raises(Exception):
-            await p.generate([{"role": "user", "content": "hi"}])
+        with pytest.raises(ValueError):
+            OpenRouterProvider(api_key="")
 
 
 class TestOllamaProvider:

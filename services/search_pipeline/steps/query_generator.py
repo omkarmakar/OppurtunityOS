@@ -6,6 +6,7 @@ from typing import Any
 
 import json
 
+from core.config import get_config
 from services.ai import AIRegistry, ModelConfig
 from services.ai.models import AIResponse
 from services.search_pipeline.steps.base import PipelineStep
@@ -39,8 +40,11 @@ class QueryGenerator(PipelineStep):
         model: str = "",
         query_count: int = 5,
     ) -> None:
+        cfg = get_config()
         self._provider_name = provider
         self._model_name = model
+        self._default_provider_name = cfg.ai.default_provider
+        self._default_model_name = cfg.ai.default_model
         self._query_count = max(1, min(query_count, 20))
         self._registry = AIRegistry.default()
 
@@ -56,14 +60,16 @@ class QueryGenerator(PipelineStep):
 
         profile_context = self._build_profile_context(profile)
 
-        provider_name = self._provider_name or "dummyai"
-        model_name = self._model_name or "dummy-model"
-        
+        provider_name = self._provider_name or self._default_provider_name
+        model_name = self._model_name or self._default_model_name
+
         try:
             provider = self._registry.get(provider_name)
         except Exception as e:
-            msg = f"Failed to get AI provider '{provider_name}': {e}"
-            raise ValueError(msg) from e
+            fallback_provider_name = "dummyai"
+            provider = self._registry.get(fallback_provider_name)
+            provider_name = fallback_provider_name
+            model_name = "dummy-model"
 
         config = ModelConfig(model=model_name, temperature=0.7, max_tokens=1024)
 

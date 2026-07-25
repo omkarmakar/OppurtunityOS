@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from core.config import get_config
 from services.ai.dummy_provider import DummyAIProvider
 from services.ai.gemini_provider import GeminiProvider
 from services.ai.ollama_provider import OllamaProvider
@@ -39,9 +40,15 @@ class AIRegistry:
     def default(cls) -> AIRegistry:
         registry = cls()
         registry.register(DummyAIProvider())
-        for name, provider_cls in [("openrouter", OpenRouterProvider)]:
+
+        cfg = get_config()
+        provider_specs: list[tuple[str, type[AIProvider], dict[str, str]]] = [
+            ("openrouter", OpenRouterProvider, {"api_key": cfg.ai.openrouter_api_key}),
+        ]
+
+        for name, provider_cls, kwargs in provider_specs:
             try:
-                registry.register(provider_cls())
+                registry.register(provider_cls(**kwargs))
             except Exception as exc:
                 logger.debug("AI provider '%s' not available: %s", name, exc)
         return registry
