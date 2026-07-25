@@ -52,8 +52,16 @@ class QueryGenerator(PipelineStep):
 
         profile_context = self._build_profile_context(profile)
 
-        provider = self._registry.get(self._provider_name or "dummyai")
-        config = ModelConfig(model=self._model_name or "dummy-model", temperature=0.7, max_tokens=1024)
+        provider_name = self._provider_name or "dummyai"
+        model_name = self._model_name or "dummy-model"
+        
+        try:
+            provider = self._registry.get(provider_name)
+        except Exception as e:
+            msg = f"Failed to get AI provider '{provider_name}': {e}"
+            raise ValueError(msg) from e
+
+        config = ModelConfig(model=model_name, temperature=0.7, max_tokens=1024)
 
         prompt = QUERY_GENERATOR_PROMPT.format(
             profile_context=profile_context,
@@ -65,8 +73,17 @@ class QueryGenerator(PipelineStep):
             {"role": "user", "content": prompt},
         ]
 
-        response: AIResponse = await provider.generate(messages, config)
+        try:
+            response: AIResponse = await provider.generate(messages, config)
+        except Exception as e:
+            msg = f"AI provider '{provider_name}' failed to generate response: {e}"
+            raise ValueError(msg) from e
+
         queries = self._parse_queries(response.content)
+        
+        if not queries:
+            msg = f"AI provider returned no parseable queries. Response: {response.content[:200]}"
+            raise ValueError(msg)
 
         ctx["queries"] = queries
         return ctx

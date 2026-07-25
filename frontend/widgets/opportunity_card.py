@@ -87,6 +87,14 @@ class OpportunityCard(QFrame):
 
         layout.addLayout(row)
 
+        # Show URL for un-scored opportunities
+        if url and score is None:
+            url_label = QLabel(url[:60])
+            url_label.setStyleSheet(f"font-size: 11px; color: {ACCENT_LIGHT}; background: transparent;")
+            url_label.setCursor(Qt.CursorShape.PointingHandCursor)
+            url_label.mousePressEvent = lambda _: QDesktopServices.openUrl(QUrl(url))
+            layout.addWidget(url_label)
+
     def _build_summary(self, layout: QVBoxLayout) -> None:
         summary = self._data.get("summary") or self._data.get("description") or ""
         if summary:
@@ -146,6 +154,19 @@ class OpportunityCard(QFrame):
     def _build_actions(self, layout: QVBoxLayout) -> None:
         row = QHBoxLayout()
         row.setSpacing(8)
+
+        url = self._data.get("url", "")
+        if url:
+            open_btn = QPushButton("Open Link")
+            open_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {ACCENT}; color: white; border: none;
+                    border-radius: 6px; padding: 6px 14px; font-size: 11px; font-weight: 600;
+                }}
+                QPushButton:hover {{ background-color: {ACCENT_LIGHT}; }}
+            """)
+            open_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(url)))
+            row.addWidget(open_btn)
 
         bookmark_btn = QPushButton("Bookmark")
         bookmark_btn.setStyleSheet(f"""

@@ -38,7 +38,13 @@ def list_opportunities(
         query = query.filter(Opportunity.status == status_filter)
 
     if min_score is not None:
-        query = query.filter(Opportunity.relevance_score >= min_score)
+        # Include NULL scores (unranked opportunities) when min_score is 0
+        if min_score == 0:
+            query = query.filter(
+                (Opportunity.relevance_score >= min_score) | (Opportunity.relevance_score.is_(None))
+            )
+        else:
+            query = query.filter(Opportunity.relevance_score >= min_score)
 
     total = query.count()
 
