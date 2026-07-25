@@ -319,12 +319,14 @@ class SearchPage(PageWidget):
         try:
             resp = httpx.get(f"{API_BASE}/search-providers", timeout=10)
             resp.raise_for_status()
-            self._provider_names = [p["name"] for p in resp.json()]
+            # Filter to only show tavily
+            all_providers = [p["name"] for p in resp.json()]
+            self._provider_names = [name for name in all_providers if name.lower() == "tavily"]
             for name in self._provider_names:
                 self._provider_combo.addItem(name)
         except Exception:
-            self._provider_combo.addItem("dummy")
-            self._provider_names = ["dummy"]
+            self._provider_combo.addItem("tavily")
+            self._provider_names = ["tavily"]
         self._load_latest_run()
 
     def _load_latest_run(self) -> None:

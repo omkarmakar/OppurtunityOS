@@ -231,7 +231,7 @@ class SettingsPage(PageWidget):
         sp_row.addWidget(sp_lbl)
         sp_row.addStretch()
         self._sp_combo = QComboBox()
-        self._sp_combo.addItems(["dummy", "brave"])
+        self._sp_combo.addItems(["tavily"])
         self._sp_combo.setStyleSheet(f"""
             QComboBox {{
                 background-color: #2a2a44; color: {TEXT_BRIGHT}; border: none;
@@ -321,6 +321,37 @@ class SettingsPage(PageWidget):
         lbl.setStyleSheet(f"font-size: 13px; color: {TEXT_MUTED}; background: transparent;")
         body.addWidget(lbl)
 
+        # Manual digest trigger
+        trigger_row = QHBoxLayout()
+        trigger_row.setSpacing(12)
+        
+        self._digest_email_edit = QLineEdit()
+        self._digest_email_edit.setPlaceholderText("your@email.com")
+        self._digest_email_edit.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: #2a2a44; color: {TEXT_BRIGHT}; border: none;
+                border-radius: 6px; padding: 8px 12px; font-size: 12px;
+            }}
+        """)
+        trigger_row.addWidget(self._digest_email_edit)
+
+        self._send_digest_btn = QPushButton("Send Digest Email")
+        self._send_digest_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {ACCENT}; color: white; border: none;
+                border-radius: 6px; padding: 8px 20px; font-size: 13px; font-weight: 600;
+            }}
+            QPushButton:hover {{ background-color: #6d28d9; }}
+            QPushButton:disabled {{ background-color: #3a3a5e; color: #666688; }}
+        """)
+        self._send_digest_btn.clicked.connect(self._send_digest)
+        trigger_row.addWidget(self._send_digest_btn)
+
+        self._digest_status = QLabel("")
+        self._digest_status.setStyleSheet(f"font-size: 12px; color: {GREEN}; background: transparent;")
+        trigger_row.addWidget(self._digest_status)
+
+        body.addLayout(trigger_row)
         self._main_layout.addWidget(section)
 
     def _load_all(self) -> None:
@@ -378,6 +409,44 @@ class SettingsPage(PageWidget):
             self._email_status.setText(f"Error: {exc}")
         finally:
             self._save_email_btn.setEnabled(True)
+
+    def _send_digest(self) -> None:
+        email = self._digest_email_edit.text().strip()
+        if not email:
+            self._digest_status.setStyleSheet(
+                f"font-size: 12px; color: {RED}; background: transparent;"
+            )
+            self._digest_status.setText("Email required")
+            return
+        try:
+            self._send_digest_btn.setEnabled(False)
+            self._digest_status.setText("Sending...")
+            params = {"user_id": USER_ID, "user_email": email}
+            resp = httpx.post(
+                f"{API_BASE}/notifications/digest/trigger",
+                params=params,
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                self._digest_status.setStyleSheet(
+                    f"font-size: 12px; color: {GREEN}; background: transparent;"
+                )
+                self._digest_status.setText(data.get("message", "Sent"))
+                QTimer.singleShot(5000, lambda: self._digest_status.setText(""))
+            else:
+                detail = resp.json().get("detail", resp.text)
+                self._digest_status.setStyleSheet(
+                    f"font-size: 12px; color: {RED}; background: transparent;"
+                )
+                self._digest_status.setText(f"Error: {detail}")
+        except Exception as exc:
+            self._digest_status.setStyleSheet(
+                f"font-size: 12px; color: {RED}; background: transparent;"
+            )
+            self._digest_status.setText(f"Error: {exc}")
+        finally:
+            self._send_digest_btn.setEnabled(True)
 
     def _load_system_settings(self) -> None:
         try:

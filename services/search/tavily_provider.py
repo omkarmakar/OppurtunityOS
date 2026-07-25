@@ -133,9 +133,45 @@ class TavilySearchProvider(SearchProvider):
 
         results: list[SearchResult] = []
         for item in data.get("results", []):
-            snippet = item.get("content", "")
-            if len(snippet) > _SNIPPET_MAX_CHARS:
-                snippet = snippet[:_SNIPPET_MAX_CHARS].rstrip() + "…"
+            title = item.get("title", "").lower()
+            url = item.get("url", "").lower()
+            snippet = item.get("content", "").lower()
+            
+            # Filter out educational content
+            educational_keywords = [
+                "tutorial", "course", "learn", "guide", "how to", "what is", 
+                "roadmap", "introduction to", "beginner guide", "getting started",
+                "python.org", "w3schools", "geeksforgeeks", "coursera", "udemy",
+                "codecademy", "youtube.com/watch", "wikipedia.org"
+            ]
+            
+            # Include if it has job-related keywords
+            job_keywords = [
+                "job", "hiring", "career", "position", "vacancy", "opening", 
+                "recruitment", "apply now", "we're hiring", "join our team",
+                "indeed.com", "linkedin.com/jobs", "glassdoor", "naukri",
+                "monster", "ziprecruiter", "angel.co", "wellfound"
+            ]
+            
+            is_educational = any(kw in title or kw in url or kw in snippet for kw in educational_keywords)
+            is_job_related = any(kw in title or kw in url or kw in snippet for kw in job_keywords)
+            
+            # Skip if clearly educational and not job-related
+            if is_educational and not is_job_related:
+                continue
+            
+            # Also skip if URL contains common learning platforms
+            learning_domains = [
+                "coursera.org", "udemy.com", "codecademy.com", "w3schools.com",
+                "geeksforgeeks.org", "tutorialspoint.com", "youtube.com/watch",
+                "wikipedia.org", "mdn.mozilla.org"
+            ]
+            if any(domain in url for domain in learning_domains) and not is_job_related:
+                continue
+            
+            snippet_text = item.get("content", "")
+            if len(snippet_text) > _SNIPPET_MAX_CHARS:
+                snippet_text = snippet_text[:_SNIPPET_MAX_CHARS].rstrip() + "…"
 
             # raw_content is the full cleaned page text (markdown or plain),
             # present when include_raw_content=True.  Store it in the raw
@@ -150,7 +186,7 @@ class TavilySearchProvider(SearchProvider):
                 SearchResult(
                     title=item.get("title", ""),
                     url=item.get("url", ""),
-                    snippet=snippet,
+                    snippet=snippet_text,
                     source=self.name,
                     raw=raw,
                 )

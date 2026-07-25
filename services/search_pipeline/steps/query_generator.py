@@ -10,20 +10,24 @@ from services.ai import AIRegistry, ModelConfig
 from services.ai.models import AIResponse
 from services.search_pipeline.steps.base import PipelineStep
 
-QUERY_GENERATOR_PROMPT = """You are an expert job search query generator. Analyze the user's profile and create highly specific, targeted search queries that will return relevant job opportunities.
+QUERY_GENERATOR_PROMPT = """You are an expert job search query generator for undergraduate students and freshers. Analyze the user's profile and create highly specific, targeted search queries that will return ACTUAL JOB POSTINGS (not tutorials, courses, or articles).
 
 User Profile:
 {profile_context}
 
-Instructions:
-1. Generate {count} distinct search queries
-2. Each query should target different aspects: specific skills combinations, role variations, industry-specific terms, location-based searches
-3. Use natural language that job boards and search engines understand
-4. Include relevant keywords from the profile (skills, technologies, tools)
-5. Mix broad queries with specific niche queries
-6. Consider experience level implied by the profile
-7. If locations are specified, include location-specific queries
-8. Format queries as if typing into a job search engine (e.g., "senior python engineer remote", "full stack developer react nodejs")
+CRITICAL RULES:
+1. Generate {count} distinct search queries for REAL JOB OPPORTUNITIES only
+2. Each query MUST include job-specific keywords: "job", "hiring", "career", "position", "vacancy", "opening", "recruitment", "apply now"
+3. Include experience level: "entry level", "junior", "fresher", "internship", "graduate", "trainee"
+4. If locations are specified, include location + job keywords (e.g., "software engineer jobs Mumbai", "python developer jobs remote India")
+5. Use specific skills from profile combined with job keywords (e.g., "python developer job hiring", "react js developer vacancy")
+6. AVOID educational content keywords: "tutorial", "course", "learn", "guide", "how to", "what is", "roadmap"
+7. Format queries as if typing into a job board or job search engine
+8. Mix these query types:
+   - Skill + job + location (e.g., "python developer jobs Bangalore")
+   - Role + experience level (e.g., "junior software engineer jobs entry level")
+   - Company + hiring (if target companies specified)
+   - Remote + skill + job (e.g., "remote python developer jobs hiring")
 
 Return ONLY a JSON array of strings, like: ["query 1", "query 2", ...]"""
 

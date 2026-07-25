@@ -23,6 +23,7 @@ class OllamaProvider(AIProvider):
         return [
             "llama3.2",
             "llama3.1",
+            "llama3.1:8b",
             "mistral",
             "mixtral",
             "codellama",
