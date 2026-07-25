@@ -19,13 +19,13 @@ from PySide6.QtWidgets import (
 )
 
 from frontend.pages.base import PageWidget
+from frontend.user_context import get_active_user_id
 from frontend.widgets.opportunity_card import TEXT_BRIGHT, TEXT_MUTED
 
 ACCENT = "#7c3aed"
 BG_CARD = "#1a1a2e"
 RED = "#ef4444"
 
-USER_ID = "00000000-0000-0000-0000-000000000000"
 API_BASE = "http://127.0.0.1:8000/api/v1"
 
 
@@ -286,7 +286,7 @@ class BookmarksPage(PageWidget):
             return
         try:
             params = {
-                "user_id": USER_ID,
+                "user_id": get_active_user_id(),
                 "page": self._page,
                 "page_size": self._page_size,
             }

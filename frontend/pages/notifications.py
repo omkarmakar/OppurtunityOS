@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from frontend.pages.base import PageWidget
+from frontend.user_context import get_active_user_id
 
 ACCENT = "#7c3aed"
 BG_CARD = "#1a1a2e"
@@ -31,7 +32,6 @@ TEXT_MUTED = "#8888bb"
 TEXT_BRIGHT = "#f0f0ff"
 CARD_RADIUS = "8px"
 
-USER_ID = "00000000-0000-0000-0000-000000000000"
 API_BASE = "http://127.0.0.1:8000/api/v1"
 
 
@@ -195,7 +195,7 @@ class NotificationsPage(PageWidget):
         except RuntimeError:
             return
         try:
-            params = urlencode({"user_id": USER_ID, "limit": 100})
+            params = urlencode({"user_id": get_active_user_id(), "limit": 100})
             resp = urllib.request.urlopen(f"{API_BASE}/notifications?{params}", timeout=5)
             self._data = json.loads(resp.read().decode())
             self._render()
@@ -239,7 +239,7 @@ class NotificationsPage(PageWidget):
         except RuntimeError:
             return
         try:
-            params = urlencode({"user_id": USER_ID})
+            params = urlencode({"user_id": get_active_user_id()})
             req = urllib.request.Request(
                 f"{API_BASE}/notifications/mark-all-read?{params}",
                 method="POST",

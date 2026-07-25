@@ -30,9 +30,10 @@ from PySide6.QtWidgets import (
 )
 
 from frontend.pages.base import PageWidget
+from frontend.user_context import get_active_user_id
 
 API_BASE = "http://127.0.0.1:8000/api/v1"
-DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001"
+DEFAULT_USER_ID = get_active_user_id()
 
 
 class TagInput(QWidget):
@@ -746,5 +747,4 @@ class ProfilePage(PageWidget):
         self._edu_list.clear()
         self._exp_list.clear()
         self._profile_id = None
-
 

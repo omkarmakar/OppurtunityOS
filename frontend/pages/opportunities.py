@@ -29,11 +29,11 @@ from frontend.theme import (
     separator_stylesheet,
     transparent_widget_stylesheet,
 )
+from frontend.user_context import get_active_user_id
 from frontend.widgets.opportunity_card import OpportunityCard
 
 TEXT_MUTED = TEXT_SECONDARY
 
-USER_ID = "00000000-0000-0000-0000-000000000000"
 API_BASE = "http://127.0.0.1:8000/api/v1"
 
 STATUS_VALUES = ["", "new", "reviewed", "applied", "interview", "rejected", "accepted"]
@@ -255,7 +255,7 @@ class OpportunitiesPage(PageWidget):
             status_val = STATUS_VALUES[idx] if 0 <= idx < len(STATUS_VALUES) else ""
 
             params = {
-                "user_id": USER_ID,
+                "user_id": get_active_user_id(),
                 "page": self._page,
                 "page_size": self._page_size,
                 "sort_by": "score" if self._sort_combo.currentIndex() == 0 else "date",

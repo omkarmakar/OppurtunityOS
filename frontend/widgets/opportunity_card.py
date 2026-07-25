@@ -29,11 +29,11 @@ from frontend.theme import (
     TEXT_SECONDARY,
     card_frame_stylesheet,
 )
+from frontend.user_context import get_active_user_id
 
 TEXT_MUTED = TEXT_SECONDARY
 CARD_RADIUS = RADIUS_MD
 
-USER_ID = "00000000-0000-0000-0000-000000000000"
 API_BASE = "http://127.0.0.1:8000/api/v1"
 
 
@@ -214,7 +214,7 @@ class OpportunityCard(QFrame):
         try:
             httpx.post(
                 f"{API_BASE}/bookmarks",
-                json={"user_id": USER_ID, "opportunity_id": self._opp_id, "notes": ""},
+                json={"user_id": get_active_user_id(), "opportunity_id": self._opp_id, "notes": ""},
                 timeout=10,
             )
         except Exception:

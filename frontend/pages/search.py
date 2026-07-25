@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from frontend.pages.base import PageWidget
+from frontend.user_context import get_active_user_id
 
 ACCENT = "#7c3aed"
 ACCENT_LIGHT = "#a78bfa"
@@ -33,7 +34,6 @@ GREEN = "#10b981"
 AMBER = "#f59e0b"
 RED = "#ef4444"
 
-USER_ID = "00000000-0000-0000-0000-000000000000"
 API_BASE = "http://127.0.0.1:8000/api/v1"
 
 
@@ -337,7 +337,7 @@ class SearchPage(PageWidget):
             return
         try:
             resp = httpx.get(
-                f"{API_BASE}/searches/latest?user_id={USER_ID}",
+                f"{API_BASE}/searches/latest?user_id={get_active_user_id()}",
                 timeout=10,
             )
             if resp.status_code == 200 and resp.json():
@@ -356,7 +356,7 @@ class SearchPage(PageWidget):
         self._progress.show()
 
         params = {
-            "user_id": USER_ID,
+            "user_id": get_active_user_id(),
             "search_provider": self._provider_combo.currentText().lower(),
             "max_queries": self._queries_spin.value(),
             "max_results": self._results_spin.value(),
@@ -377,8 +377,13 @@ class SearchPage(PageWidget):
         self._thread.start()
 
     def _on_success(self, data: dict[str, Any]) -> None:
-        self._last_result = data
-        self._show_success(data)
+        if data.get("success", False):
+            self._last_result = data
+            self._show_success(data)
+            return
+
+        self._last_result = None
+        self._show_error(data.get("error", "Search pipeline failed."))
 
     def _on_error(self, msg: str) -> None:
         self._last_result = None

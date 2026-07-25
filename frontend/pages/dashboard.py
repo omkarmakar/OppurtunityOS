@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from frontend.pages.base import PageWidget
+from frontend.user_context import get_active_user_id
 from frontend.theme import (
     ACCENT,
     BG_CARD,
@@ -259,7 +260,7 @@ class DashboardPage(PageWidget):
         try:
             import urllib.request
             resp = urllib.request.urlopen(
-                "http://127.0.0.1:8000/api/v1/dashboard?user_id=00000000-0000-0000-0000-000000000000",
+                f"http://127.0.0.1:8000/api/v1/dashboard?user_id={get_active_user_id()}",
                 timeout=5,
             )
             self._data = json.loads(resp.read().decode())

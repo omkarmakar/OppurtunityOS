@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from frontend.pages.base import PageWidget
+from frontend.user_context import get_active_user_id
 
 ACCENT = "#7c3aed"
 ACCENT_LIGHT = "#a78bfa"
@@ -30,7 +31,6 @@ TEXT_BRIGHT = "#f0f0ff"
 GREEN = "#10b981"
 RED = "#ef4444"
 
-USER_ID = "00000000-0000-0000-0000-000000000000"
 API_BASE = "http://127.0.0.1:8000/api/v1"
 
 
@@ -366,7 +366,7 @@ class SettingsPage(PageWidget):
 
     def _load_user_email(self) -> None:
         try:
-            resp = httpx.get(f"{API_BASE}/users/{USER_ID}", timeout=10)
+            resp = httpx.get(f"{API_BASE}/users/{get_active_user_id()}", timeout=10)
             if resp.status_code == 200:
                 email = resp.json().get("email", "")
                 # Don't surface the synthetic placeholder to the user.
@@ -386,7 +386,7 @@ class SettingsPage(PageWidget):
         try:
             self._save_email_btn.setEnabled(False)
             resp = httpx.put(
-                f"{API_BASE}/users/{USER_ID}",
+                f"{API_BASE}/users/{get_active_user_id()}",
                 json={"email": email},
                 timeout=10,
             )
@@ -421,7 +421,7 @@ class SettingsPage(PageWidget):
         try:
             self._send_digest_btn.setEnabled(False)
             self._digest_status.setText("Sending...")
-            params = {"user_id": USER_ID, "user_email": email}
+            params = {"user_id": get_active_user_id(), "user_email": email}
             resp = httpx.post(
                 f"{API_BASE}/notifications/digest/trigger",
                 params=params,
@@ -459,7 +459,7 @@ class SettingsPage(PageWidget):
 
     def _load_user_settings(self) -> None:
         try:
-            resp = httpx.get(f"{API_BASE}/user-settings?user_id={USER_ID}", timeout=10)
+            resp = httpx.get(f"{API_BASE}/user-settings?user_id={get_active_user_id()}", timeout=10)
             if resp.status_code == 200:
                 self._user_settings = resp.json()
                 self._apply_user_settings()
@@ -554,7 +554,7 @@ class SettingsPage(PageWidget):
 
         try:
             resp = httpx.put(
-                f"{API_BASE}/user-settings?user_id={USER_ID}",
+                f"{API_BASE}/user-settings?user_id={get_active_user_id()}",
                 json=data,
                 timeout=10,
             )
