@@ -5,6 +5,13 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
+class IntegrationStatus(BaseModel):
+    name: str = Field(description="Integration identifier")
+    configured: bool = Field(description="Whether API key or connection is configured")
+    env_var: str = Field(description="Environment variable to set if not configured")
+    hint: str = Field(default="", description="Optional setup hint")
+
+
 class DatabaseSettingsResponse(BaseModel):
     url: str = Field(description="Database connection URL (password redacted)")
     driver: str = Field(description="Database driver")
@@ -48,3 +55,7 @@ class SettingsResponse(BaseModel):
     server: ServerSettingsResponse = Field(description="Server settings")
     plugins: PluginSettingsResponse = Field(description="Plugin settings")
     paths: PathSettingsResponse = Field(description="Path settings")
+    configuration_status: list[IntegrationStatus] = Field(
+        default_factory=list,
+        description="Per-integration configuration check (key presence, not the key itself)",
+    )

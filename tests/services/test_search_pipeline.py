@@ -206,6 +206,138 @@ class TestOpportunityCreator:
         result = await step.execute(ctx)
         assert result["opportunities"] == []
 
+    @pytest.mark.asyncio
+    async def test_dedup_skips_duplicate_url(self, session) -> None:
+        from datetime import datetime, timezone
+
+        from services.content_extractor import ExtractedContent
+        from services.search.models import SearchResult
+
+        profile = Profile(id=uuid4(), user_id=uuid4())
+        session.add(profile)
+        session.flush()
+
+        # First run — insert the opportunity
+        step1 = OpportunityCreator(db=session)
+        ctx1 = {
+            "profile": profile,
+            "extracted_contents": [
+                {
+                    "search_result": SearchResult(
+                        title="Python Dev", url="https://example.com/job1",
+                        snippet="Build APIs",
+                    ),
+                    "content": ExtractedContent(
+                        title="Python Dev", content="Job description here",
+                        source_url="https://example.com/job1",
+                    ),
+                },
+            ],
+        }
+        result1 = await step1.execute(ctx1)
+        assert len(result1["opportunities"]) == 1
+        assert result1["opportunities_skipped_duplicate"] == 0
+        first_opp = result1["opportunities"][0]
+        first_id = first_opp.id
+        first_seen = first_opp.last_seen_at
+
+        # Second run — same URL should skip creation but update last_seen_at
+        step2 = OpportunityCreator(db=session)
+        ctx2 = {
+            "profile": profile,
+            "extracted_contents": [
+                {
+                    "search_result": SearchResult(
+                        title="Python Dev", url="https://example.com/job1",
+                        snippet="Build APIs",
+                    ),
+                    "content": ExtractedContent(
+                        title="Python Dev", content="Job description here",
+                        source_url="https://example.com/job1",
+                    ),
+                },
+            ],
+        }
+        result2 = await step2.execute(ctx2)
+        assert len(result2["opportunities"]) == 1
+        assert result2["opportunities_skipped_duplicate"] == 1
+        second_opp = result2["opportunities"][0]
+        # Same row — id unchanged
+        assert second_opp.id == first_id
+        # last_seen_at should now be set
+        assert second_opp.last_seen_at is not None
+        if first_seen is not None:
+            assert second_opp.last_seen_at >= first_seen
+
+    @pytest.mark.asyncio
+    async def test_dedup_empty_url_always_creates(self, session) -> None:
+        from services.content_extractor import ExtractedContent
+        from services.search.models import SearchResult
+
+        profile = Profile(id=uuid4(), user_id=uuid4())
+        session.add(profile)
+        session.flush()
+
+        step = OpportunityCreator(db=session)
+        ctx = {
+            "profile": profile,
+            "extracted_contents": [
+                {
+                    "search_result": SearchResult(title="No URL Job", url=""),
+                    "content": ExtractedContent(content="desc"),
+                },
+            ],
+        }
+        result1 = await step.execute(ctx)
+        assert len(result1["opportunities"]) == 1
+        assert result1["opportunities_skipped_duplicate"] == 0
+
+        # Second run with same empty URL — should still create
+        result2 = await step.execute(ctx)
+        assert len(result2["opportunities"]) == 1
+        assert result2["opportunities_skipped_duplicate"] == 0
+
+    @pytest.mark.asyncio
+    async def test_dedup_updates_last_seen_at(self, session) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        from services.content_extractor import ExtractedContent
+        from services.search.models import SearchResult
+
+        profile = Profile(id=uuid4(), user_id=uuid4())
+        session.add(profile)
+        session.flush()
+
+        # Insert a direct opportunity with a last_seen_at in the past
+        from database.models.opportunities import Opportunity
+
+        past = datetime.now(timezone.utc) - timedelta(days=30)
+        opp = Opportunity(
+            id=uuid4(), user_id=profile.user_id,
+            title="Old", url="https://example.com/old",
+            discovered_at=past, last_seen_at=past,
+        )
+        session.add(opp)
+        session.flush()
+
+        step = OpportunityCreator(db=session)
+        ctx = {
+            "profile": profile,
+            "extracted_contents": [
+                {
+                    "search_result": SearchResult(
+                        title="Old", url="https://example.com/old",
+                    ),
+                    "content": ExtractedContent(source_url="https://example.com/old"),
+                },
+            ],
+        }
+        result = await step.execute(ctx)
+        assert result["opportunities_skipped_duplicate"] == 1
+        updated = result["opportunities"][0]
+        assert updated.last_seen_at is not None
+        assert updated.last_seen_at > past
+
 
 class TestRanking:
     @pytest.mark.asyncio

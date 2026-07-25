@@ -67,7 +67,7 @@ class TestPipelineEndpoint:
         data = resp.json()
         for field in (
             "success", "queries_generated", "search_results_count",
-            "pages_extracted", "opportunities_created", "opportunities_scored",
-            "notifications_sent", "error",
+            "pages_extracted", "opportunities_created", "opportunities_skipped_duplicate",
+            "opportunities_scored", "notifications_sent", "error",
         ):
             assert field in data, f"Missing field: {field}"

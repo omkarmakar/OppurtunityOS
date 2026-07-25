@@ -49,3 +49,39 @@ class TestSettingsEndpoint:
     def test_settings_debug_enabled(self, client: TestClient) -> None:
         response = client.get("/api/v1/settings")
         assert response.json()["debug"] is True
+
+    def test_settings_has_configuration_status(self, client: TestClient) -> None:
+        response = client.get("/api/v1/settings")
+        data = response.json()
+        assert "configuration_status" in data
+        assert len(data["configuration_status"]) >= 1
+
+    def test_configuration_status_structure(self, client: TestClient) -> None:
+        response = client.get("/api/v1/settings")
+        for item in response.json()["configuration_status"]:
+            assert "name" in item
+            assert "configured" in item
+            assert isinstance(item["configured"], bool)
+            assert "env_var" in item
+
+    def test_dummyai_always_configured(self, client: TestClient) -> None:
+        response = client.get("/api/v1/settings")
+        for item in response.json()["configuration_status"]:
+            if item["name"] == "dummyai":
+                assert item["configured"] is True
+                return
+        assert False, "dummyai not found in configuration_status"
+
+    def test_ollama_always_configured(self, client: TestClient) -> None:
+        response = client.get("/api/v1/settings")
+        for item in response.json()["configuration_status"]:
+            if item["name"] == "ollama":
+                assert item["configured"] is True
+                return
+        assert False, "ollama not found in configuration_status"
+
+    def test_settings_redaction_no_config_keys_in_response(self, client: TestClient) -> None:
+        response = client.get("/api/v1/settings")
+        raw = response.text
+        assert "sk-" not in raw
+        assert "AIza" not in raw

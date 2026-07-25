@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from database.models.bookmarks import Bookmark
     from database.models.notifications import Notification
     from database.models.opportunities import Opportunity
+    from database.models.pipeline_runs import PipelineRun
     from database.models.profiles import Profile
     from database.models.searches import Search
     from database.models.sources import Source
@@ -69,4 +70,7 @@ class User(Base):
     )
     application_settings: Mapped[Optional[ApplicationSettings]] = relationship(
         "ApplicationSettings", back_populates="user", uselist=False, cascade="all, delete-orphan",
+    )
+    pipeline_runs: Mapped[List[PipelineRun]] = relationship(
+        "PipelineRun", back_populates="user", cascade="all, delete-orphan",
     )

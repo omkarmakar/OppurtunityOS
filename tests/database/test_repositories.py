@@ -189,3 +189,72 @@ class TestOpportunityRepository:
         repo = OpportunityRepository(session)
         assert repo.count(priority="high") == 1
         assert repo.count(priority="medium") == 2
+
+
+class TestApplicationSettingsRepository:
+    def test_get_by_user_id(self, session: Session) -> None:
+        from database.models import User
+        from database.repositories import ApplicationSettingsRepository
+
+        user = User(email="as_repo@example.com", password_hash="pw")
+        session.add(user)
+        session.flush()
+
+        repo = ApplicationSettingsRepository(session)
+        settings = repo.get_by_user_id(user.id)
+        assert settings is None
+
+        s = repo._model(user_id=user.id, theme="dark")
+        session.add(s)
+        session.commit()
+
+        found = repo.get_by_user_id(user.id)
+        assert found is not None
+        assert found.theme == "dark"
+
+    def test_upsert_creates_new(self, session: Session) -> None:
+        from database.models import User
+        from database.repositories import ApplicationSettingsRepository
+
+        user = User(email="upsert_new@example.com", password_hash="pw")
+        session.add(user)
+        session.flush()
+
+        repo = ApplicationSettingsRepository(session)
+        result = repo.upsert(user.id, theme="light", default_max_queries=8)
+        assert result.theme == "light"
+        assert result.default_max_queries == 8
+        session.commit()
+
+    def test_upsert_updates_existing(self, session: Session) -> None:
+        from database.models import User
+        from database.repositories import ApplicationSettingsRepository
+
+        user = User(email="upsert_upd@example.com", password_hash="pw")
+        session.add(user)
+        session.flush()
+
+        repo = ApplicationSettingsRepository(session)
+        repo.upsert(user.id, theme="dark")
+        session.commit()
+
+        result = repo.upsert(user.id, theme="light", default_max_results=20)
+        assert result.theme == "light"
+        assert result.default_max_results == 20
+
+    def test_upsert_preserves_existing_fields(self, session: Session) -> None:
+        from database.models import User
+        from database.repositories import ApplicationSettingsRepository
+
+        user = User(email="upsert_pres@example.com", password_hash="pw")
+        session.add(user)
+        session.flush()
+
+        repo = ApplicationSettingsRepository(session)
+        repo.upsert(user.id, theme="dark", language="fr")
+        session.commit()
+
+        result = repo.upsert(user.id, default_max_queries=12)
+        assert result.theme == "dark"
+        assert result.language == "fr"
+        assert result.default_max_queries == 12

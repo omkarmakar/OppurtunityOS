@@ -21,6 +21,7 @@ class PipelineResponse(BaseModel):
     search_results_count: int = 0
     pages_extracted: int = 0
     opportunities_created: int = 0
+    opportunities_skipped_duplicate: int = 0
     opportunities_scored: int = 0
     notifications_sent: int = 0
     error: str = ""
@@ -50,12 +51,16 @@ async def run_pipeline(
     pipeline = SearchPipeline(db=db, config=config)
     result: PipelineResult = await pipeline.run(profile)
 
+    if result.success:
+        db.commit()
+
     return PipelineResponse(
         success=result.success,
         queries_generated=result.queries_generated,
         search_results_count=result.search_results_count,
         pages_extracted=result.pages_extracted,
         opportunities_created=result.opportunities_created,
+        opportunities_skipped_duplicate=result.opportunities_skipped_duplicate,
         opportunities_scored=result.opportunities_scored,
         notifications_sent=result.notifications_sent,
         error=result.error,

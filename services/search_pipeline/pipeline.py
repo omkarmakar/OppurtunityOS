@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from database.models.pipeline_runs import PipelineRun
 from database.models.profiles import Profile
+from database.repositories.pipeline_run_repository import PipelineRunRepository
 from services.search_pipeline.notifier import (
     LoggingNotifier,
     PipelineEvent,
@@ -49,10 +52,12 @@ class PipelineResult:
     search_results_count: int = 0
     pages_extracted: int = 0
     opportunities_created: int = 0
+    opportunities_skipped_duplicate: int = 0
     opportunities_scored: int = 0
     notifications_sent: int = 0
     error: str = ""
     step_results: dict[str, Any] = field(default_factory=dict)
+    run_id: str = ""
 
 
 class SearchPipeline:
@@ -61,11 +66,14 @@ class SearchPipeline:
         db: Session,
         config: PipelineConfig | None = None,
         notifier: PipelineNotifier | None = None,
+        run_repo: PipelineRunRepository | None = None,
     ) -> None:
         self._db = db
         self._config = config or PipelineConfig()
         self._notifier = notifier or LoggingNotifier()
         self._steps: list[PipelineStep] = []
+        self._run_repo = run_repo
+        self._run: PipelineRun | None = None
 
     def _build_steps(self) -> None:
         self._steps = []
@@ -119,6 +127,15 @@ class SearchPipeline:
         self._build_steps()
         result = PipelineResult()
 
+        now = datetime.now(timezone.utc)
+
+        if self._run_repo:
+            self._run = PipelineRun(
+                user_id=profile.user_id,
+                started_at=now,
+            )
+            self._run_repo.add(self._run)
+
         ctx: dict[str, Any] = {
             "profile": profile,
             "db": self._db,
@@ -136,16 +153,21 @@ class SearchPipeline:
                 self._emit(step.name, "failed", msg)
                 result.success = False
                 result.error = msg
+                self._finalize_run(result, now)
                 return result
 
         result.success = True
         result.queries_generated = ctx.get("queries", [])
         result.search_results_count = len(ctx.get("search_results", []))
         result.pages_extracted = len(ctx.get("extracted_contents", []))
-        result.opportunities_created = len(ctx.get("opportunities", []))
+        created = ctx.get("opportunities", [])
+        result.opportunities_created = len(created) - ctx.get("opportunities_skipped_duplicate", 0)
+        result.opportunities_skipped_duplicate = ctx.get("opportunities_skipped_duplicate", 0)
         result.opportunities_scored = len(ctx.get("scored_opportunities", []))
         result.notifications_sent = 1
         result.step_results = ctx
+
+        self._finalize_run(result, now)
 
         self._emit("pipeline", "completed", "Pipeline finished", {
             "opportunities": result.opportunities_created,
@@ -153,3 +175,18 @@ class SearchPipeline:
         })
 
         return result
+
+    def _finalize_run(self, result: PipelineResult, started_at: datetime) -> None:
+        if not self._run_repo or not self._run:
+            return
+        self._run.finished_at = datetime.now(timezone.utc)
+        self._run.success = result.success
+        self._run.queries_generated = result.queries_generated
+        self._run.search_results_count = result.search_results_count
+        self._run.opportunities_created = result.opportunities_created
+        self._run.opportunities_skipped_duplicate = result.opportunities_skipped_duplicate
+        self._run.opportunities_scored = result.opportunities_scored
+        self._run.error = result.error if result.error else None
+        self._run.step_results = result.step_results if result.step_results else None
+        self._run_repo.update(self._run)
+        result.run_id = str(self._run.id)

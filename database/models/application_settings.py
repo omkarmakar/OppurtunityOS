@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Uuid, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database.base import Base
@@ -35,6 +35,15 @@ class ApplicationSettings(Base):
     )
     notification_preferences: Mapped[Optional[dict[str, Any]]] = mapped_column(
         JSON, nullable=True,
+    )
+    default_search_provider: Mapped[str] = mapped_column(
+        String(50), default="dummy", nullable=False,
+    )
+    default_max_queries: Mapped[int] = mapped_column(
+        Integer, default=5, nullable=False,
+    )
+    default_max_results: Mapped[int] = mapped_column(
+        Integer, default=10, nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False,

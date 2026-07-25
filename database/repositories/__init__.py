@@ -12,6 +12,7 @@ from database.repositories.base import BaseRepository
 from database.repositories.bookmark_repository import BookmarkRepository
 from database.repositories.notification_repository import NotificationRepository
 from database.repositories.opportunity_repository import OpportunityRepository
+from database.repositories.pipeline_run_repository import PipelineRunRepository
 from database.repositories.profile_repository import ProfileRepository
 from database.repositories.search_repository import SearchRepository
 from database.repositories.source_repository import SourceRepository
@@ -23,6 +24,7 @@ __all__ = [
     "BookmarkRepository",
     "NotificationRepository",
     "OpportunityRepository",
+    "PipelineRunRepository",
     "ProfileRepository",
     "SearchRepository",
     "SourceRepository",

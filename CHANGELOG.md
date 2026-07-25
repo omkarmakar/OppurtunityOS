@@ -2,6 +2,113 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **Settings page rebuilt**: `frontend/pages/settings.py` is now a full settings UI with three sections:
+  - **Integrations**: Renders `configuration_status` from `GET /settings` as a checklist with ✅/❌
+    indicators, showing the exact env var to set for each missing integration (brave_search, openai,
+    gemini, openrouter, ollama, dummyai). No secrets touch the UI.
+  - **Preferences**: Theme (system/light/dark), language (en/fr/de/es/ja), notifications checkbox,
+    default search provider dropdown (dummy/brave), default max_queries/max_results spinboxes.
+    All fields are loaded from `GET /user-settings?user_id=...` and saved via `PUT /user-settings`.
+  - **Digest Schedule**: Explains that digest config is currently file-only.
+- **`GET/PUT /api/v1/user-settings` endpoint**: Backed by `ApplicationSettings` model +
+  `ApplicationSettingsRepository.get_by_user_id()`/`upsert()`. Covers theme, language,
+  notifications_enabled, notification_preferences, default_search_provider,
+  default_max_queries, default_max_results.
+- **Migration 007**: Adds `default_search_provider`, `default_max_queries`, `default_max_results`
+  columns to `application_settings` table.
+- **`configuration_status` block in `GET /api/v1/settings`**: Returns per-integration `{name,
+  configured: bool, env_var, hint}` for braze_search, openai, gemini, openrouter, ollama, dummyai.
+  Based purely on config key presence — never returns API keys or secrets.
+- **ApplicationSettingsRepository extended**: Added `get_by_user_id()` and `upsert()` methods for
+  the standard user-ID lookup and create-or-update patterns.
+- **Bookmarks page rebuilt**: `frontend/pages/bookmarks.py` is now a full bookmarks list with:
+  - `BookmarkRow` cards showing opportunity title/score/summary with clickable title
+  - Inline notes editing via `QLineEdit` with "saved"/"error" feedback, persisted via
+    `PATCH /bookmarks/{id}`
+  - "Remove" button (calls `DELETE /bookmarks/{id}`) with automatic list refresh
+  - Pagination controls matching the Opportunities page pattern
+  - Empty state directing users to browse and bookmark opportunities
+  - Offline fallback when the API is unreachable
+- **Shared `OpportunityCard` widget**: `frontend/widgets/opportunity_card.py` extracted from
+  `frontend/pages/opportunities.py` and now imported by both pages. DRY — single card
+  definition used in Opportunities and Bookmarks pages.
+- **`PATCH /api/v1/bookmarks/{id}` endpoint**: Allows notes-only update on bookmarks.
+  Returns updated `BookmarkDetailResponse` with joined opportunity
+  title/url/relevance_score. Returns 404 for missing bookmarks.
+- **Search page rebuilt**: `frontend/pages/search.py` is now a full search-pipeline runner with:
+  - Options card: search provider dropdown (populated from `GET /search-providers`), max queries
+    spinbox (1-20), max results spinbox (1-50), skip AI ranking checkbox
+  - "Run Search Now" button — prominent purple primary action button (matching app accent)
+  - `QThread`-based execution so the synchronous `/pipeline/run` call never blocks the GUI
+  - Indeterminate progress bar while running, button disabled during execution
+  - Results summary panel on success (queries, results found, pages extracted, opportunities
+    created, duplicates skipped, scored, notifications) with "View Results" button that
+    navigates to the Opportunities page via `MainWindow._navigate(3)`
+  - Error state on failure — error message shown in red (not silent fail)
+  - "Last Run" section showing latest search timestamp and result count, fetched from
+    `GET /searches/latest?user_id=...`
+- **`GET /api/v1/search-providers` endpoint**: Lists available search provider names (dummy, brave
+  if configured) via `SearchRegistry.default().list()`, sorted alphabetically
+- **`GET /api/v1/searches/latest` endpoint**: Returns the most recent search for a user (id, query,
+  result_count, last_run_at, created_at) — used by the search page's "Last Run" section
+- **Frontend opportunities page rebuilt**: `frontend/pages/opportunities.py` is now a rich opportunity
+  browser with: filter/sort bar (status dropdown, min-score spinbox, sort-by dropdown), scrollable card
+  list with score badge (green/amber/red), clickable title via `QDesktopServices.openUrl`, summary,
+  Strengths section, Gaps section (missing skills in red, concerns in amber), deadline, Bookmark button,
+  Mark Applied status dropdown, pagination controls (Previous/Next, page indicator), empty state, loading
+  spinner, offline fallback. Uses httpx synchronous calls matching profile.py pattern.
+- **Opportunity deduplication**: `OpportunityCreator` pipeline step now checks for existing
+  opportunities with the same `(user_id, url)` before creating a new row. If a match is found,
+  `last_seen_at` is updated to the current timestamp and the row is reused instead of duplicated.
+- **`last_seen_at` column**: New nullable `DateTime(timezone=True)` column on `opportunities`
+  table tracks when an opportunity was last observed in search results.
+- **Partial unique index**: A `CREATE UNIQUE INDEX ... WHERE url IS NOT NULL AND url != ''` on
+  `(user_id, url)` prevents duplicate rows at the database level. Migration 006 cleans any
+  existing duplicates before creating the index.
+- **`opportunities_skipped_duplicate` field**: New field on `PipelineResult` and
+  `PipelineResponse` so the API caller can see how many results were skipped as duplicates.
+- **Alembic migration 006**: Adds `last_seen_at`, cleans duplicates, creates partial unique index.
+- **Opportunities API**: Three new endpoints under `/api/v1/opportunities`:
+  - `GET /opportunities` — paginated, filterable list (by status, min_score; sort by score or date)
+  - `GET /opportunities/{id}` — full detail with all AI scoring fields (summary, pros, cons,
+    required_skills, missing_skills, ranking_explanation, application_deadline, and more)
+  - `PATCH /opportunities/{id}/status` — update status to new/reviewed/applied/interview/rejected/accepted
+- **Bookmarks API**: Four endpoints under `/api/v1/bookmarks`:
+  - `POST /bookmarks` — create a bookmark (returns 409 on duplicate)
+  - `GET /bookmarks` — paginated list with joined opportunity title, url, and relevance_score
+  - `PATCH /bookmarks/{id}` — update notes (added in P3)
+  - `DELETE /bookmarks/{id}` — remove a bookmark
+
+### Changed
+
+- **services/search_pipeline/steps/opportunity_creator.py**: Added `_find_by_url()` helper and
+  dedup logic. Opportunities with empty URLs always create a new row (logged as warning).
+- **services/search_pipeline/pipeline.py**: `PipelineResult.opportunities_created` now counts
+  only genuinely new rows; `opportunities_skipped_duplicate` reports skipped count.
+- **backend/api/v1/endpoints/pipe.py**: `PipelineResponse` includes the new
+  `opportunities_skipped_duplicate` field.
+- **database/models/opportunities.py**: Added `last_seen_at` column and `__table_args__` with
+  partial unique index definition.
+- **backend/api/v1/endpoints/__init__.py**: Added `bookmarks` and `opportunities` routers.
+- **backend/main.py**: Registered the new opportunities and bookmarks routers.
+
+### Tests
+
+- 4 new dedup tests in `tests/services/test_search_pipeline.py`:
+  - `test_dedup_skips_duplicate_url` — first insert creates, second run with same URL skips
+  - `test_dedup_empty_url_always_creates` — empty URL always inserts
+  - `test_dedup_updates_last_seen_at` — repeat sighting bumps `last_seen_at`
+  - Existing `test_execute_creates_opportunities` and `test_execute_empty_extracted` unchanged
+- 10 new opportunity endpoint tests in `tests/backend/test_opportunities.py`:
+  - Requires user ID, empty list, pagination, get by ID, get 404, status update, invalid status,
+    status 404, filter by status, filter by min_score
+- 6 new bookmark endpoint tests in `tests/backend/test_bookmarks.py`:
+  - Create bookmark, duplicate 409, missing opportunity 404, delete, delete 404, list, pagination
+
 ## [0.9.0] - 2026-07-25
 
 ### Added

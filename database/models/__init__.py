@@ -8,6 +8,7 @@ from database.models.application_settings import ApplicationSettings
 from database.models.bookmarks import Bookmark
 from database.models.notifications import Notification
 from database.models.opportunities import Opportunity
+from database.models.pipeline_runs import PipelineRun
 from database.models.profiles import Profile
 from database.models.searches import Search
 from database.models.sources import Source
@@ -18,6 +19,7 @@ __all__ = [
     "Bookmark",
     "Notification",
     "Opportunity",
+    "PipelineRun",
     "Profile",
     "Search",
     "Source",

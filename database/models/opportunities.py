@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, Uuid, func
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, Integer, String, Text, Uuid, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database.base import Base
@@ -19,6 +19,16 @@ if TYPE_CHECKING:
 
 class Opportunity(Base):
     __tablename__ = "opportunities"
+
+    __table_args__ = (
+        Index(
+            "ix_opportunities_user_url",
+            "user_id",
+            "url",
+            unique=True,
+            sqlite_where=text("url IS NOT NULL AND url != ''"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid, primary_key=True, default=uuid.uuid4,
@@ -83,6 +93,9 @@ class Opportunity(Base):
         DateTime(timezone=True), nullable=True,
     )
 
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False,
     )
