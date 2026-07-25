@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from backend.api.deps import get_db
 from backend.schemas.profiles import ProfileCreate, ProfileResponse, ProfileUpdate
 from database.models import Profile
-from database.repositories import ProfileRepository
+from database.repositories import ProfileRepository, UserRepository
 
 router = APIRouter()
 
@@ -30,6 +30,9 @@ def create_profile(data: ProfileCreate, db: Session = Depends(get_db)) -> Profil
     existing = repo.get_by_user_id(data.user_id)
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Profile already exists")
+    # Ensure a User row exists before creating the Profile so the FK is
+    # satisfied on all databases, including Postgres where it is enforced.
+    UserRepository(db).get_or_create(data.user_id)
     profile = Profile(**data.model_dump())
     repo.add(profile)
     db.commit()

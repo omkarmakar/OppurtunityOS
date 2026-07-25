@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from database.models.opportunities import Opportunity
     from database.models.pipeline_runs import PipelineRun
     from database.models.profiles import Profile
+    from database.models.scheduler_state import SchedulerState
     from database.models.searches import Search
     from database.models.sources import Source
 
@@ -73,4 +74,7 @@ class User(Base):
     )
     pipeline_runs: Mapped[List[PipelineRun]] = relationship(
         "PipelineRun", back_populates="user", cascade="all, delete-orphan",
+    )
+    scheduler_states: Mapped[List[SchedulerState]] = relationship(
+        "SchedulerState", back_populates="user", cascade="all, delete-orphan",
     )

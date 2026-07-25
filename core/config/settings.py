@@ -81,6 +81,16 @@ class BraveSearchSettings(BaseModel):
     )
 
 
+class TavilySettings(BaseModel):
+    """Tavily Search API configuration."""
+
+    api_key: str = Field(default="", description="Tavily API key (starts with tvly-)")
+    base_url: str = Field(
+        default="https://api.tavily.com/search",
+        description="Tavily Search API endpoint",
+    )
+
+
 class PluginSettings(BaseModel):
     """Plugin system configuration."""
 
@@ -151,12 +161,29 @@ class BackgroundSchedulerSettings(BaseModel):
 
     # Pipeline task
     pipeline_enabled: bool = Field(default=False, description="Enable automatic pipeline runs")
-    pipeline_interval_seconds: int = Field(default=3600, ge=60, le=604800, description="Pipeline run interval (seconds)")
+    pipeline_interval_seconds: int = Field(
+        default=3600, ge=60, le=604800,
+        description="Legacy interval kept for backward compatibility; unused when window mode is active",
+    )
     pipeline_search_provider: str = Field(default="dummy", description="Search provider for scheduled pipeline")
     pipeline_max_queries: int = Field(default=5, ge=1, le=20)
     pipeline_max_results: int = Field(default=10, ge=1, le=50)
     pipeline_retry_count: int = Field(default=3, ge=0, le=10)
     pipeline_retry_delay_base: int = Field(default=30, ge=1, le=600)
+
+    # Pipeline window — calendar-day, local-time scheduling
+    timezone: str = Field(
+        default="Asia/Kolkata",
+        description="IANA timezone name used for the daily pipeline window (e.g. 'Asia/Kolkata', 'America/New_York')",
+    )
+    pipeline_window_start_hour: int = Field(
+        default=6, ge=0, le=23,
+        description="Local hour (inclusive) at which the pipeline run window opens",
+    )
+    pipeline_window_end_hour: int = Field(
+        default=12, ge=0, le=23,
+        description="Local hour (exclusive) at which the pipeline run window closes",
+    )
 
     # Digest task
     digest_enabled: bool = Field(default=False, description="Enable automatic digest via scheduler")
@@ -219,6 +246,7 @@ class AppConfig(BaseSettings):
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     server: ServerSettings = Field(default_factory=ServerSettings)
     brave_search: BraveSearchSettings = Field(default_factory=BraveSearchSettings)
+    tavily: TavilySettings = Field(default_factory=TavilySettings)
     ai: AISettings = Field(default_factory=AISettings)
     plugins: PluginSettings = Field(default_factory=PluginSettings)
     paths: PathSettings = Field(default_factory=PathSettings)

@@ -4,7 +4,80 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **BUG 1 — digest email never sent**: `_digest_callback` in
+  `services/background/tasks.py` was calling `digest_svc.run(user_id)` with
+  no `user_email` argument, so `DailyDigestService.run()` always skipped the
+  `if self._email and user_email …` branch silently — no error, no log, no
+  email — even when SMTP was fully configured. Fixed by looking up the `User`
+  row via `UserRepository` before building the service and passing
+  `user_email=user.email` into `run()`. If no row exists or the stored email
+  is a placeholder, the callback now logs a clear warning
+  (`"digest skipped: no user row / no email for user_id=…"`) and returns
+  early instead of raising.
+
+- **BUG 2 — no way to create a User row**: `database/models/users.py` defined
+  the `User` model with `email` (unique, NOT NULL) and other models held hard
+  foreign keys to `users.id`, but there was no `UserRepository`, no API
+  endpoint, and no upsert path — making it impossible to store a real email
+  address (required for BUG 1's fix) and silently fragile on Postgres where
+  FK constraints are enforced. Fixed with four coordinated changes:
+  - **`UserRepository.get_or_create`** (`database/repositories/user_repository.py`):
+    returns the existing row or creates one; uses a synthetic
+    `placeholder-<id>@no-email.invalid` when no real email is supplied so
+    the NOT NULL constraint is always satisfied. Handles concurrent
+    `IntegrityError` races.
+  - **`GET/PUT /api/v1/users/{user_id}`** (`backend/api/v1/endpoints/users.py`,
+    `backend/schemas/users.py`): `GET` returns 404 when the row is absent;
+    `PUT` is an idempotent upsert — creates the row if missing then applies
+    any supplied fields. This is the only way to store a real email for digest
+    delivery.
+  - **`POST /api/v1/profiles` guard** (`backend/api/v1/endpoints/profiles.py`):
+    `create_profile` now calls `UserRepository.get_or_create(data.user_id)`
+    before inserting the `Profile` row, ensuring the FK is always satisfied
+    on Postgres (previously silently skipped on SQLite).
+  - **`backend/api/v1/endpoints/__init__.py` / `backend/main.py`**: `users`
+    router registered under `/api/v1`.
+
 ### Added
+
+- **Calendar-Day Local-Time Window Scheduling** (`services/background/`):
+  - Added `timezone` (default `"Asia/Kolkata"`), `pipeline_window_start_hour` (default 6), and `pipeline_window_end_hour` (default 12) to `BackgroundSchedulerSettings`.
+  - Extended `ScheduledTask` in `services/background/scheduler.py` with `run_condition: Callable[[], bool] | None`. Updated `BackgroundScheduler._tick()` to evaluate `run_condition()` when present.
+  - Added `SchedulerState` model ([scheduler_state.py](file:///c:/Users/omkar/Documents/Projects/COS/OpportunityOS/database/models/scheduler_state.py)) and repository ([scheduler_state_repository.py](file:///c:/Users/omkar/Documents/Projects/COS/OpportunityOS/database/repositories/scheduler_state_repository.py)) with Alembic migration `009_create_scheduler_state.py` to persist local calendar date (`last_run_date`) per user and task across app restarts.
+  - Implemented `_make_pipeline_run_condition` closure in `services/background/tasks.py` using `zoneinfo.ZoneInfo`, ensuring the pipeline runs once per calendar day within the configured local time window.
+  - Added startup check logging when the app starts past the daily window end hour without having run today.
+  - Retained Option (a): digest task remains on its independent `digest_interval_seconds` schedule.
+  - Added 5 unit tests in `tests/services/test_background_scheduler.py` covering window bounds, same-day duplicate prevention, next calendar day resets, and state persistence across process restarts.
+
+- **Tavily Search Provider** (`services/search/tavily_provider.py`): replacement search provider for Brave Search (whose free tier was discontinued in Feb 2026). Features:
+  - `TavilySearchProvider` class implementing `SearchProvider` interface with name `"Tavily"`
+  - `TavilySettings` configuration domain in `core/config/settings.py` (`OOS_TAVILY__API_KEY`, `OOS_TAVILY__BASE_URL`)
+  - Full request/response mapping (`query`, `max_results`, `search_depth`, `include_raw_content`)
+  - Content snippet truncation capped at 500 characters
+  - `raw_content` page text stored in `SearchResult.raw` for downstream step optimization
+  - Error handling for missing API key (`RuntimeError`) and HTTP 429 rate limit / quota exhaustion
+  - Registered in `SearchRegistry.default()` and available in `GET /api/v1/search-providers`
+  - Documented in `.env.example` along with legacy Brave Search settings
+  - 20 unit tests in `tests/services/test_tavily_provider.py` mocking `httpx.AsyncClient`
+
+- **"Your Email" field in Settings page** (`frontend/pages/settings.py`): new
+  **Account** section card (above Preferences) with a `QLineEdit` for the
+  user's email address and a "Save Email" button. On load, `GET
+  /users/{user_id}` is called and the stored email pre-populated (synthetic
+  placeholders are suppressed). On save, `PUT /users/{user_id}` is called with
+  inline green "Saved" / red error feedback. This is the only in-app way to
+  set the email that drives digest delivery.
+
+- **`tests/database/test_user_repository.py`**: covers `get_or_create`
+  idempotency (8 cases), `get_by_email`, and the profile-creation FK path.
+
+- **`tests/backend/test_users.py`**: covers `GET /users/{user_id}` (404 on
+  miss, happy path, response shape), `PUT /users/{user_id}` (create, upsert
+  idempotency, email update, placeholder fallback, `is_active` flag, 422 on
+  invalid email), profile-auto-creates-user integration path, and the two
+  digest-skip-gracefully paths (no row / placeholder email) via mocks.
 
 - **Settings page rebuilt**: `frontend/pages/settings.py` is now a full settings UI with three sections:
   - **Integrations**: Renders `configuration_status` from `GET /settings` as a checklist with ✅/❌

@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -86,11 +87,65 @@ class SettingsPage(PageWidget):
         self._main_layout.setSpacing(16)
 
         self._build_integrations_section()
+        self._build_account_section()
         self._build_preferences_section()
         self._build_digest_section()
         self._main_layout.addStretch()
 
         QTimer.singleShot(0, self._load_all)
+
+    def _build_account_section(self) -> None:
+        section = SettingsSection("Account")
+        body = section.body()
+
+        email_row = QHBoxLayout()
+        email_row.setSpacing(12)
+        email_lbl = QLabel("Your Email")
+        email_lbl.setStyleSheet(
+            f"font-size: 13px; font-weight: 500; color: {TEXT_BRIGHT}; background: transparent;"
+        )
+        email_row.addWidget(email_lbl)
+        email_row.addStretch()
+        self._email_edit = QLineEdit()
+        self._email_edit.setPlaceholderText("your@email.com")
+        self._email_edit.setFixedWidth(260)
+        self._email_edit.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: #2a2a44; color: {TEXT_BRIGHT}; border: none;
+                border-radius: 6px; padding: 6px 12px; font-size: 12px;
+            }}
+            QLineEdit:focus {{ border: 1px solid {ACCENT}; }}
+        """)
+        email_row.addWidget(self._email_edit)
+        body.addLayout(email_row)
+
+        hint = QLabel("Used for digest email delivery. Changes take effect on the next digest run.")
+        hint.setWordWrap(True)
+        hint.setStyleSheet(f"font-size: 11px; color: {TEXT_MUTED}; background: transparent;")
+        body.addWidget(hint)
+
+        save_row = QHBoxLayout()
+        save_row.addStretch()
+        self._save_email_btn = QPushButton("Save Email")
+        self._save_email_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {ACCENT}; color: white; border: none;
+                border-radius: 6px; padding: 8px 20px; font-size: 13px; font-weight: 600;
+            }}
+            QPushButton:hover {{ background-color: #6d28d9; }}
+            QPushButton:disabled {{ background-color: #3a3a5e; color: #666688; }}
+        """)
+        self._save_email_btn.clicked.connect(self._save_email)
+        save_row.addWidget(self._save_email_btn)
+
+        self._email_status = QLabel("")
+        self._email_status.setStyleSheet(
+            f"font-size: 12px; color: {GREEN}; background: transparent;"
+        )
+        save_row.addWidget(self._email_status)
+        body.addLayout(save_row)
+
+        self._main_layout.addWidget(section)
 
     def _build_integrations_section(self) -> None:
         section = SettingsSection("Integrations")
@@ -276,6 +331,53 @@ class SettingsPage(PageWidget):
             return
         self._load_system_settings()
         self._load_user_settings()
+        self._load_user_email()
+
+    def _load_user_email(self) -> None:
+        try:
+            resp = httpx.get(f"{API_BASE}/users/{USER_ID}", timeout=10)
+            if resp.status_code == 200:
+                email = resp.json().get("email", "")
+                # Don't surface the synthetic placeholder to the user.
+                if email and not email.endswith("@no-email.invalid"):
+                    self._email_edit.setText(email)
+        except Exception:
+            pass
+
+    def _save_email(self) -> None:
+        email = self._email_edit.text().strip()
+        if not email:
+            self._email_status.setStyleSheet(
+                f"font-size: 12px; color: {RED}; background: transparent;"
+            )
+            self._email_status.setText("Email cannot be empty")
+            return
+        try:
+            self._save_email_btn.setEnabled(False)
+            resp = httpx.put(
+                f"{API_BASE}/users/{USER_ID}",
+                json={"email": email},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                self._email_status.setStyleSheet(
+                    f"font-size: 12px; color: {GREEN}; background: transparent;"
+                )
+                self._email_status.setText("Saved")
+                QTimer.singleShot(3000, lambda: self._email_status.setText(""))
+            else:
+                detail = resp.json().get("detail", resp.text)
+                self._email_status.setStyleSheet(
+                    f"font-size: 12px; color: {RED}; background: transparent;"
+                )
+                self._email_status.setText(f"Error: {detail}")
+        except Exception as exc:
+            self._email_status.setStyleSheet(
+                f"font-size: 12px; color: {RED}; background: transparent;"
+            )
+            self._email_status.setText(f"Error: {exc}")
+        finally:
+            self._save_email_btn.setEnabled(True)
 
     def _load_system_settings(self) -> None:
         try:

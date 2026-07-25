@@ -14,6 +14,7 @@ from database.repositories.notification_repository import NotificationRepository
 from database.repositories.opportunity_repository import OpportunityRepository
 from database.repositories.pipeline_run_repository import PipelineRunRepository
 from database.repositories.profile_repository import ProfileRepository
+from database.repositories.scheduler_state_repository import SchedulerStateRepository
 from database.repositories.search_repository import SearchRepository
 from database.repositories.source_repository import SourceRepository
 from database.repositories.user_repository import UserRepository
@@ -26,6 +27,7 @@ __all__ = [
     "OpportunityRepository",
     "PipelineRunRepository",
     "ProfileRepository",
+    "SchedulerStateRepository",
     "SearchRepository",
     "SourceRepository",
     "UserRepository",

@@ -340,6 +340,7 @@ class TestSchedulerEdgeCases:
 
         # should not raise
         scheduler._tick()
+        time.sleep(0.05)
         assert task._running is False
         scheduler.stop()
 
@@ -388,3 +389,207 @@ class TestSchedulerEdgeCases:
         assert len(calls) == 2
 
         scheduler.stop()
+
+
+# ── Window Scheduling Condition ─────────────────────────────────────
+
+
+class TestWindowSchedulingCondition:
+    """Tests covering calendar-day, local-time window scheduling."""
+
+    def test_run_condition_true_inside_window_no_prior_run(self, tmp_path) -> None:
+        """Condition is True inside window when task hasn't run today."""
+        import zoneinfo
+        from datetime import datetime
+
+        from database.base import Base
+        from database.repositories import UserRepository
+        from database.session import SessionLocal, init_db
+        from services.background.tasks import _make_pipeline_run_condition
+
+        db_path = tmp_path / "test.db"
+        init_db(data_dir=str(db_path.parent))
+        db_factory = SessionLocal
+
+        uid = uuid.uuid4()
+        db = db_factory()
+        UserRepository(db).get_or_create(uid)
+        db.commit()
+        db.close()
+
+        config = AppConfig()
+        config.background_scheduler.timezone = "Asia/Kolkata"
+        config.background_scheduler.pipeline_window_start_hour = 6
+        config.background_scheduler.pipeline_window_end_hour = 12
+
+        tz = zoneinfo.ZoneInfo("Asia/Kolkata")
+        fake_now = datetime(2026, 7, 25, 8, 0, tzinfo=tz)
+
+        cond = _make_pipeline_run_condition(uid, config, session_factory=db_factory)
+
+        with patch("services.background.tasks.datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            assert cond() is True
+
+        Base.metadata.drop_all(bind=SessionLocal.kw["bind"])
+
+    def test_run_condition_false_outside_window(self, tmp_path) -> None:
+        """Condition is False outside window (e.g. 2 PM local)."""
+        import zoneinfo
+        from datetime import datetime
+
+        from database.base import Base
+        from database.repositories import UserRepository
+        from database.session import SessionLocal, init_db
+        from services.background.tasks import _make_pipeline_run_condition
+
+        db_path = tmp_path / "test.db"
+        init_db(data_dir=str(db_path.parent))
+        db_factory = SessionLocal
+
+        uid = uuid.uuid4()
+        db = db_factory()
+        UserRepository(db).get_or_create(uid)
+        db.commit()
+        db.close()
+
+        config = AppConfig()
+        config.background_scheduler.timezone = "Asia/Kolkata"
+        config.background_scheduler.pipeline_window_start_hour = 6
+        config.background_scheduler.pipeline_window_end_hour = 12
+
+        tz = zoneinfo.ZoneInfo("Asia/Kolkata")
+        fake_now = datetime(2026, 7, 25, 14, 0, tzinfo=tz)
+
+        cond = _make_pipeline_run_condition(uid, config, session_factory=db_factory)
+
+        with patch("services.background.tasks.datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            assert cond() is False
+
+        Base.metadata.drop_all(bind=SessionLocal.kw["bind"])
+
+    def test_run_condition_false_when_already_run_today_inside_window(self, tmp_path) -> None:
+        """Condition is False inside window if already completed today."""
+        import zoneinfo
+        from datetime import date, datetime
+
+        from database.base import Base
+        from database.repositories import SchedulerStateRepository, UserRepository
+        from database.session import SessionLocal, init_db
+        from services.background.tasks import _make_pipeline_run_condition
+
+        db_path = tmp_path / "test.db"
+        init_db(data_dir=str(db_path.parent))
+        db_factory = SessionLocal
+
+        uid = uuid.uuid4()
+        db = db_factory()
+        UserRepository(db).get_or_create(uid)
+        today = date(2026, 7, 25)
+        SchedulerStateRepository(db).update_last_run(uid, "pipeline", run_date=today)
+        db.commit()
+        db.close()
+
+        config = AppConfig()
+        config.background_scheduler.timezone = "Asia/Kolkata"
+        config.background_scheduler.pipeline_window_start_hour = 6
+        config.background_scheduler.pipeline_window_end_hour = 12
+
+        tz = zoneinfo.ZoneInfo("Asia/Kolkata")
+        fake_now = datetime(2026, 7, 25, 9, 30, tzinfo=tz)
+
+        cond = _make_pipeline_run_condition(uid, config, session_factory=db_factory)
+
+        with patch("services.background.tasks.datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            assert cond() is False
+
+        Base.metadata.drop_all(bind=SessionLocal.kw["bind"])
+
+    def test_run_condition_true_next_calendar_day(self, tmp_path) -> None:
+        """Condition becomes True again on the next calendar day."""
+        import zoneinfo
+        from datetime import date, datetime
+
+        from database.base import Base
+        from database.repositories import SchedulerStateRepository, UserRepository
+        from database.session import SessionLocal, init_db
+        from services.background.tasks import _make_pipeline_run_condition
+
+        db_path = tmp_path / "test.db"
+        init_db(data_dir=str(db_path.parent))
+        db_factory = SessionLocal
+
+        uid = uuid.uuid4()
+        db = db_factory()
+        UserRepository(db).get_or_create(uid)
+        yesterday = date(2026, 7, 24)
+        SchedulerStateRepository(db).update_last_run(uid, "pipeline", run_date=yesterday)
+        db.commit()
+        db.close()
+
+        config = AppConfig()
+        config.background_scheduler.timezone = "Asia/Kolkata"
+        config.background_scheduler.pipeline_window_start_hour = 6
+        config.background_scheduler.pipeline_window_end_hour = 12
+
+        tz = zoneinfo.ZoneInfo("Asia/Kolkata")
+        fake_now = datetime(2026, 7, 25, 8, 0, tzinfo=tz)
+
+        cond = _make_pipeline_run_condition(uid, config, session_factory=db_factory)
+
+        with patch("services.background.tasks.datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            assert cond() is True
+
+        Base.metadata.drop_all(bind=SessionLocal.kw["bind"])
+
+    def test_last_run_date_persists_across_scheduler_restart(self, tmp_path) -> None:
+        """Scheduler state persisted in DB prevents re-run across new BackgroundScheduler instances."""
+        import zoneinfo
+        from datetime import date, datetime
+
+        from database.base import Base
+        from database.repositories import SchedulerStateRepository, UserRepository
+        from database.session import SessionLocal, init_db
+        from services.background.tasks import _make_pipeline_run_condition
+
+        db_path = tmp_path / "test.db"
+        init_db(data_dir=str(db_path.parent))
+        db_factory = SessionLocal
+
+        uid = uuid.uuid4()
+        db = db_factory()
+        UserRepository(db).get_or_create(uid)
+        db.commit()
+        db.close()
+
+        config = AppConfig()
+        config.background_scheduler.enabled = True
+        config.background_scheduler.pipeline_enabled = True
+        config.background_scheduler.timezone = "Asia/Kolkata"
+        config.background_scheduler.pipeline_window_start_hour = 6
+        config.background_scheduler.pipeline_window_end_hour = 12
+
+        tz = zoneinfo.ZoneInfo("Asia/Kolkata")
+        fake_now = datetime(2026, 7, 25, 7, 0, tzinfo=tz)
+
+        # Instance 1: runs and persists state in DB
+        db1 = db_factory()
+        SchedulerStateRepository(db1).update_last_run(uid, "pipeline", run_date=date(2026, 7, 25))
+        db1.commit()
+        db1.close()
+
+        # Instance 2: brand new BackgroundScheduler instance created (simulating app restart)
+        sched2 = BackgroundScheduler()
+        cond2 = _make_pipeline_run_condition(uid, config, session_factory=db_factory)
+        task2 = ScheduledTask(name="pipeline", interval_seconds=60, run_condition=cond2, callback=lambda: None)
+        sched2.add_task(task2)
+
+        with patch("services.background.tasks.datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            assert cond2() is False
+
+        Base.metadata.drop_all(bind=SessionLocal.kw["bind"])
+

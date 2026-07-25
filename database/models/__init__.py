@@ -10,6 +10,7 @@ from database.models.notifications import Notification
 from database.models.opportunities import Opportunity
 from database.models.pipeline_runs import PipelineRun
 from database.models.profiles import Profile
+from database.models.scheduler_state import SchedulerState
 from database.models.searches import Search
 from database.models.sources import Source
 from database.models.users import User
@@ -21,6 +22,7 @@ __all__ = [
     "Opportunity",
     "PipelineRun",
     "Profile",
+    "SchedulerState",
     "Search",
     "Source",
     "User",

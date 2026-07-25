@@ -15,6 +15,7 @@ from backend.api.v1.endpoints.search_providers import router as search_providers
 from backend.api.v1.endpoints.searches import router as searches
 from backend.api.v1.endpoints.settings import router as settings
 from backend.api.v1.endpoints.user_settings import router as user_settings
+from backend.api.v1.endpoints.users import router as users
 from backend.api.v1.endpoints.version import router as version
 
 __all__ = [
@@ -32,6 +33,7 @@ __all__ = [
     "search_providers",
     "searches",
     "user_settings",
+    "users",
     "version",
     "settings",
 ]

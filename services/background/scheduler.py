@@ -30,6 +30,7 @@ class ScheduledTask:
     max_retries: int = 3
     retry_delay_base: float = 10.0
     enabled: bool = True
+    run_condition: Callable[[], bool] | None = None
     _last_run: datetime | None = field(default=None, repr=False)
     _running: bool = field(default=False, repr=False)
 
@@ -38,7 +39,7 @@ class BackgroundScheduler:
     """Daemon-thread scheduler that manages and runs ScheduledTask instances.
 
     Features:
-    - Polls every N seconds and runs tasks whose interval has elapsed.
+    - Polls every N seconds and runs tasks whose interval has elapsed or run_condition is satisfied.
     - Supports callable intervals for dynamic re-reading from config.
     - Prevents duplicate concurrent runs of the same task.
     - Retries failed tasks with exponential backoff.
@@ -118,9 +119,13 @@ class BackgroundScheduler:
             if task._running:
                 continue  # prevent duplicate concurrent runs
 
-            interval = task.interval_seconds() if callable(task.interval_seconds) else task.interval_seconds
-            if task._last_run and (now - task._last_run).total_seconds() < interval:
-                continue  # not yet due
+            if task.run_condition is not None:
+                if not task.run_condition():
+                    continue
+            else:
+                interval = task.interval_seconds() if callable(task.interval_seconds) else task.interval_seconds
+                if task._last_run and (now - task._last_run).total_seconds() < interval:
+                    continue  # not yet due
 
             task._running = True
             task._last_run = now

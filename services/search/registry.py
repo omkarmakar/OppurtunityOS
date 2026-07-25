@@ -7,6 +7,7 @@ import logging
 from services.search.brave_provider import BraveSearchProvider
 from services.search.dummy_provider import DummyProvider
 from services.search.provider import SearchProvider
+from services.search.tavily_provider import TavilySearchProvider
 
 logger = logging.getLogger(__name__)
 
@@ -45,4 +46,8 @@ class SearchRegistry:
             registry.register(BraveSearchProvider())
         except Exception as exc:
             logger.debug("BraveSearchProvider not available: %s", exc)
+        try:
+            registry.register(TavilySearchProvider())
+        except Exception as exc:
+            logger.debug("TavilySearchProvider not available: %s", exc)
         return registry

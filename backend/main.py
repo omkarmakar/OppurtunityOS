@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api.v1.endpoints import ai, bookmarks, content, dashboard, health, notifications, opportunities, pipe, profiles, resume, scoring, search_providers, searches, settings, user_settings, version
+from backend.api.v1.endpoints import ai, bookmarks, content, dashboard, health, notifications, opportunities, pipe, profiles, resume, scoring, search_providers, searches, settings, user_settings, users, version
 from backend.core.config import get_backend_config
 from backend.middleware.rate_limit import RateLimitMiddleware
 from database.session import init_db
@@ -84,3 +84,4 @@ app.include_router(bookmarks, prefix="/api/v1", tags=["bookmarks"])
 app.include_router(search_providers, prefix="/api/v1", tags=["search_providers"])
 app.include_router(searches, prefix="/api/v1", tags=["searches"])
 app.include_router(user_settings, prefix="/api/v1", tags=["user_settings"])
+app.include_router(users, prefix="/api/v1", tags=["users"])
