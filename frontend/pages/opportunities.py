@@ -20,11 +20,18 @@ from PySide6.QtWidgets import (
 )
 
 from frontend.pages.base import PageWidget
+from frontend.theme import (
+    ACCENT,
+    TEXT_BRIGHT,
+    TEXT_SECONDARY,
+    page_title_stylesheet,
+    scroll_area_stylesheet,
+    separator_stylesheet,
+    transparent_widget_stylesheet,
+)
 from frontend.widgets.opportunity_card import OpportunityCard
 
-TEXT_MUTED = "#8888bb"
-TEXT_BRIGHT = "#f0f0ff"
-ACCENT = "#7c3aed"
+TEXT_MUTED = TEXT_SECONDARY
 
 USER_ID = "00000000-0000-0000-0000-000000000000"
 API_BASE = "http://127.0.0.1:8000/api/v1"
@@ -50,15 +57,15 @@ class OpportunitiesPage(PageWidget):
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        scroll.setStyleSheet(scroll_area_stylesheet())
         layout.addWidget(scroll)
 
         container = QWidget()
-        container.setStyleSheet("background: transparent;")
+        container.setStyleSheet(transparent_widget_stylesheet())
         scroll.setWidget(container)
 
         self._main_layout = QVBoxLayout(container)
-        self._main_layout.setContentsMargins(32, 32, 32, 32)
+        self._main_layout.setContentsMargins(36, 36, 36, 36)
         self._main_layout.setSpacing(16)
 
         self._build_header()
@@ -74,7 +81,7 @@ class OpportunitiesPage(PageWidget):
         row.setSpacing(12)
 
         title = QLabel("Opportunities")
-        title.setStyleSheet(f"font-size: 24px; font-weight: 600; color: {TEXT_BRIGHT}; background: transparent;")
+        title.setStyleSheet(page_title_stylesheet())
         row.addWidget(title)
 
         self._result_count_label = QLabel("")
@@ -98,7 +105,7 @@ class OpportunitiesPage(PageWidget):
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet("QFrame { color: #2a2a44; max-height: 1px; }")
+        sep.setStyleSheet(separator_stylesheet())
         self._main_layout.addWidget(sep)
 
     def _build_filter_bar(self) -> None:
@@ -177,10 +184,10 @@ class OpportunitiesPage(PageWidget):
     def _build_card_list(self) -> None:
         self._card_scroll = QScrollArea()
         self._card_scroll.setWidgetResizable(True)
-        self._card_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        self._card_scroll.setStyleSheet(scroll_area_stylesheet())
 
         self._card_container = QWidget()
-        self._card_container.setStyleSheet("background: transparent;")
+        self._card_container.setStyleSheet(transparent_widget_stylesheet())
         self._card_layout = QVBoxLayout(self._card_container)
         self._card_layout.setContentsMargins(0, 0, 0, 0)
         self._card_layout.setSpacing(8)

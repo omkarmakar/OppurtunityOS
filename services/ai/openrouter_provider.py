@@ -22,14 +22,20 @@ class OpenRouterProvider(AIProvider):
     @property
     def supported_models(self) -> list[str]:
         return [
-            "openai/gpt-4o",
-            "openai/gpt-4o-mini",
-            "anthropic/claude-3.5-sonnet",
-            "anthropic/claude-3-haiku",
-            "google/gemini-2.0-flash",
-            "meta-llama/llama-3.3-70b-instruct",
-            "mistral/mistral-large",
-            "deepseek/deepseek-chat",
+            "openai/gpt-4o-mini:free",
+            "openai/gpt-4o:free",
+            "anthropic/claude-3.5-sonnet:free",
+            "anthropic/claude-3-haiku:free",
+            "google/gemini-2.0-flash:free",
+            "meta-llama/llama-3.3-70b-instruct:free",
+            "mistral/mistral-large:free",
+            "deepseek/deepseek-chat:free",
+            "nvidia/nemotron-3-ultra-550b-a55b:free",
+            "google/gemma-4-26b-a4b-it:free",
+            "meta-llama/llama-4-scout:free",
+            "deepseek/deepseek-r1:free",
+            "qwen/qwen3-235b-a22b:free",
+            "qwen/qwen3-coder:free",
         ]
 
     async def generate(

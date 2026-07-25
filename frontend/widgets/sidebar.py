@@ -5,6 +5,18 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
+from frontend.theme import (
+    ACCENT_LIGHT,
+    BG_SURFACE,
+    BORDER_SUBTLE,
+    FONT_FAMILY,
+    SIDEBAR_ACTIVE_BG,
+    SIDEBAR_ACTIVE_BORDER,
+    SIDEBAR_HOVER_BG,
+    TEXT_MUTED,
+    TEXT_SECONDARY,
+)
+
 
 class SidebarButton(QPushButton):
     """A styled sidebar navigation button."""
@@ -14,29 +26,32 @@ class SidebarButton(QPushButton):
         self.setText(f"  {icon}  {text}")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setCheckable(True)
-        self.setMinimumHeight(44)
+        self.setMinimumHeight(42)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.setStyleSheet("""
-            QPushButton {
+        self.setStyleSheet(f"""
+            QPushButton {{
                 text-align: left;
-                padding: 10px 20px;
+                padding: 10px 16px 10px 14px;
                 border: none;
                 border-radius: 8px;
-                font-size: 14px;
+                font-family: {FONT_FAMILY};
+                font-size: 13px;
                 font-weight: 500;
-                color: #8888bb;
+                color: {TEXT_SECONDARY};
                 background-color: transparent;
-                margin: 2px 8px;
-            }
-            QPushButton:hover {
-                background-color: #1e1e38;
-                color: #c0c0e0;
-            }
-            QPushButton:checked {
-                background-color: #2e1065;
-                color: #a78bfa;
+                margin: 1px 10px;
+            }}
+            QPushButton:hover {{
+                background-color: {SIDEBAR_HOVER_BG};
+                color: #c8c8e0;
+            }}
+            QPushButton:checked {{
+                background-color: {SIDEBAR_ACTIVE_BG};
+                color: {ACCENT_LIGHT};
                 font-weight: 600;
-            }
+                border-left: 3px solid {SIDEBAR_ACTIVE_BORDER};
+                padding-left: 11px;
+            }}
         """)
 
 
@@ -63,36 +78,56 @@ class Sidebar(QWidget):
         self._select(0)
 
     def _setup_ui(self) -> None:
-        self.setFixedWidth(220)
+        self.setFixedWidth(232)
         self.setObjectName("sidebar")
-        self.setStyleSheet("""
-            QWidget#sidebar {
-                background-color: #12121e;
-                border-right: 1px solid #2a2a44;
-            }
+        self.setStyleSheet(f"""
+            QWidget#sidebar {{
+                background-color: {BG_SURFACE};
+                border-right: 1px solid {BORDER_SUBTLE};
+            }}
         """)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        brand = QLabel("  \u25A0  OOS")
-        brand.setStyleSheet("""
-            QLabel {
-                font-size: 20px;
+        brand_wrap = QWidget()
+        brand_wrap.setObjectName("brandWrap")
+        brand_wrap.setStyleSheet("QWidget#brandWrap { background: transparent; }")
+        brand_layout = QVBoxLayout(brand_wrap)
+        brand_layout.setContentsMargins(20, 28, 20, 20)
+        brand_layout.setSpacing(2)
+
+        brand = QLabel("OpportunityOS")
+        brand.setStyleSheet(f"""
+            QLabel {{
+                font-size: 17px;
                 font-weight: 700;
-                color: #a78bfa;
-                padding: 24px 20px 20px 20px;
+                color: {ACCENT_LIGHT};
                 background-color: transparent;
-            }
+                letter-spacing: -0.2px;
+            }}
         """)
-        layout.addWidget(brand)
+        brand_layout.addWidget(brand)
+
+        tagline = QLabel("Discover & track")
+        tagline.setStyleSheet(f"""
+            QLabel {{
+                font-size: 11px;
+                font-weight: 500;
+                color: {TEXT_MUTED};
+                background-color: transparent;
+                padding-left: 1px;
+            }}
+        """)
+        brand_layout.addWidget(tagline)
+        layout.addWidget(brand_wrap)
 
         separator = QFrame()
         separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setStyleSheet("QFrame { color: #2a2a44; max-height: 1px; margin: 0 16px; }")
+        separator.setStyleSheet(f"QFrame {{ color: {BORDER_SUBTLE}; max-height: 1px; margin: 0 16px; }}")
         layout.addWidget(separator)
-        layout.addSpacing(12)
+        layout.addSpacing(10)
 
         nav_container = QWidget()
         nav_container.setObjectName("navContainer")
@@ -112,13 +147,13 @@ class Sidebar(QWidget):
 
         version = QLabel("v0.3.0")
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        version.setStyleSheet("""
-            QLabel {
+        version.setStyleSheet(f"""
+            QLabel {{
                 font-size: 11px;
-                color: #555577;
-                padding: 12px;
+                color: {TEXT_MUTED};
+                padding: 14px;
                 background-color: transparent;
-            }
+            }}
         """)
         layout.addWidget(version)
 

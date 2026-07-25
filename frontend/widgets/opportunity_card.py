@@ -5,19 +5,33 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
-from PySide6.QtCore import QUrl, Qt
+from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
-ACCENT = "#7c3aed"
-ACCENT_LIGHT = "#a78bfa"
-BG_CARD = "#1a1a2e"
-TEXT_MUTED = "#8888bb"
-TEXT_BRIGHT = "#f0f0ff"
-CARD_RADIUS = "8px"
-GREEN = "#10b981"
-AMBER = "#f59e0b"
-RED = "#ef4444"
+from frontend.theme import (
+    ACCENT,
+    ACCENT_LIGHT,
+    ACCENT_MUTED_BG,
+    AMBER,
+    GREEN,
+    RADIUS_MD,
+    RED,
+    TEXT_BRIGHT,
+    TEXT_SECONDARY,
+    card_frame_stylesheet,
+)
+
+TEXT_MUTED = TEXT_SECONDARY
+CARD_RADIUS = RADIUS_MD
 
 USER_ID = "00000000-0000-0000-0000-000000000000"
 API_BASE = "http://127.0.0.1:8000/api/v1"
@@ -33,14 +47,7 @@ class OpportunityCard(QFrame):
         self.setObjectName("oppCard")
         score = data.get("relevance_score")
         score_color = GREEN if score and score >= 70 else (AMBER if score and score >= 40 else RED)
-        self.setStyleSheet(f"""
-            QFrame#oppCard {{
-                background-color: {BG_CARD};
-                border-radius: {CARD_RADIUS};
-                border-left: 3px solid {score_color};
-                padding: 12px;
-            }}
-        """)
+        self.setStyleSheet(card_frame_stylesheet("oppCard", border_left=score_color))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 12, 16, 12)
         layout.setSpacing(6)
@@ -80,7 +87,7 @@ class OpportunityCard(QFrame):
         status_label.setStyleSheet(f"""
             QLabel {{
                 font-size: 11px; font-weight: 600; color: {ACCENT};
-                background: #2a1a4e; border-radius: 4px; padding: 2px 10px;
+                background: {ACCENT_MUTED_BG}; border-radius: 6px; padding: 3px 10px;
             }}
         """)
         row.addWidget(status_label)

@@ -14,7 +14,7 @@ from frontend.pages.opportunities import OpportunitiesPage
 from frontend.pages.profile import ProfilePage
 from frontend.pages.search import SearchPage
 from frontend.pages.settings import SettingsPage
-from frontend.theme import get_stylesheet
+from frontend.theme import BG_APP, get_stylesheet
 from frontend.widgets.sidebar import Sidebar
 from services.background import create_and_start_scheduler
 
@@ -62,10 +62,10 @@ class MainWindow(QMainWindow):
 
         self._stack = QStackedWidget()
         self._stack.setObjectName("pageStack")
-        self._stack.setStyleSheet("""
-            QStackedWidget#pageStack {
-                background-color: #0f0f1a;
-            }
+        self._stack.setStyleSheet(f"""
+            QStackedWidget#pageStack {{
+                background-color: {BG_APP};
+            }}
         """)
         layout.addWidget(self._stack, 1)
 

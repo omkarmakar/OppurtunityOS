@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QStackedWidget
 from pytestqt.qtbot import QtBot
 
-from frontend.windows.main_window import MainWindow
 from frontend.widgets.sidebar import Sidebar
+from frontend.windows.main_window import MainWindow
 
 
 class TestMainWindow:
@@ -29,7 +28,7 @@ class TestMainWindow:
         qtbot.add_widget(window)
         sidebar = window.findChild(Sidebar)
         assert sidebar is not None
-        assert sidebar.width() == 220
+        assert sidebar.width() == 232
 
     def test_eight_pages_in_stack(self, qtbot: QtBot) -> None:
         window = MainWindow()

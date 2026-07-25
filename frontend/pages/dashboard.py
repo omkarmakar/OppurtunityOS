@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from typing import Any
-from urllib.request import urlopen
 
 from PySide6.QtCharts import (
     QBarCategoryAxis,
@@ -17,10 +15,9 @@ from PySide6.QtCharts import (
     QValueAxis,
 )
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -32,38 +29,38 @@ from PySide6.QtWidgets import (
 )
 
 from frontend.pages.base import PageWidget
+from frontend.theme import (
+    ACCENT,
+    BG_CARD,
+    PALETTE,
+    TEXT_BRIGHT,
+    TEXT_SECONDARY,
+    card_frame_stylesheet,
+    muted_label_stylesheet,
+    page_title_stylesheet,
+    scroll_area_stylesheet,
+    separator_stylesheet,
+    transparent_widget_stylesheet,
+)
 
-ACCENT = "#7c3aed"
-ACCENT_LIGHT = "#a78bfa"
-BG_CARD = "#1a1a2e"
-TEXT_MUTED = "#8888bb"
-TEXT_BRIGHT = "#f0f0ff"
-CARD_RADIUS = "8px"
-
-PALETTE = ["#7c3aed", "#2563eb", "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#06b6d4", "#84cc16"]
+TEXT_MUTED = TEXT_SECONDARY
 
 
 class DashCard(QFrame):
     def __init__(self, title: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("dashCard")
-        self.setStyleSheet(f"""
-            QFrame#dashCard {{
-                background-color: {BG_CARD};
-                border-radius: {CARD_RADIUS};
-                padding: 16px;
-            }}
-        """)
+        self.setStyleSheet(card_frame_stylesheet("dashCard"))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(8)
 
         header = QLabel(title)
-        header.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {TEXT_MUTED}; background: transparent;")
+        header.setStyleSheet(muted_label_stylesheet(size=12, weight=600))
         layout.addWidget(header)
 
         self._body = QWidget()
-        self._body.setStyleSheet("background: transparent;")
+        self._body.setStyleSheet(transparent_widget_stylesheet())
         self._body_layout = QVBoxLayout(self._body)
         self._body_layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._body, 1)
@@ -82,14 +79,7 @@ class StatCard(QFrame):
     def __init__(self, label: str, value: str, color: str = ACCENT, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("statCard")
-        self.setStyleSheet(f"""
-            QFrame#statCard {{
-                background-color: {BG_CARD};
-                border-radius: {CARD_RADIUS};
-                border-left: 3px solid {color};
-                padding: 12px;
-            }}
-        """)
+        self.setStyleSheet(card_frame_stylesheet("statCard", border_left=color))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 12, 16, 12)
 
@@ -164,16 +154,16 @@ class DashboardPage(PageWidget):
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        scroll.setStyleSheet(scroll_area_stylesheet())
         layout.addWidget(scroll)
 
         container = QWidget()
-        container.setStyleSheet("background: transparent;")
+        container.setStyleSheet(transparent_widget_stylesheet())
         scroll.setWidget(container)
 
         self._main_layout = QVBoxLayout(container)
-        self._main_layout.setContentsMargins(32, 32, 32, 32)
-        self._main_layout.setSpacing(20)
+        self._main_layout.setContentsMargins(36, 36, 36, 36)
+        self._main_layout.setSpacing(24)
 
         self._build_header()
         self._build_stats_row()
@@ -188,17 +178,17 @@ class DashboardPage(PageWidget):
 
     def _build_header(self) -> None:
         header = QLabel("Dashboard")
-        header.setStyleSheet(f"font-size: 24px; font-weight: 600; color: {TEXT_BRIGHT}; background: transparent;")
+        header.setStyleSheet(page_title_stylesheet())
         self._main_layout.addWidget(header)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet("QFrame { color: #2a2a44; max-height: 1px; }")
+        sep.setStyleSheet(separator_stylesheet())
         self._main_layout.addWidget(sep)
 
     def _build_stats_row(self) -> None:
         self._stats_widget = QWidget()
-        self._stats_widget.setStyleSheet("background: transparent;")
+        self._stats_widget.setStyleSheet(transparent_widget_stylesheet())
         self._stats_layout = QHBoxLayout(self._stats_widget)
         self._stats_layout.setSpacing(16)
         self._stats_layout.setContentsMargins(0, 0, 0, 0)
@@ -226,7 +216,7 @@ class DashboardPage(PageWidget):
 
     def _build_graphs_row(self) -> None:
         row = QWidget()
-        row.setStyleSheet("background: transparent;")
+        row.setStyleSheet(transparent_widget_stylesheet())
         row_layout = QHBoxLayout(row)
         row_layout.setSpacing(16)
         row_layout.setContentsMargins(0, 0, 0, 0)

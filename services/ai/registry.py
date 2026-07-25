@@ -39,8 +39,7 @@ class AIRegistry:
     def default(cls) -> AIRegistry:
         registry = cls()
         registry.register(DummyAIProvider())
-        for name, provider_cls in [("openai", OpenAIProvider), ("gemini", GeminiProvider),
-                                    ("openrouter", OpenRouterProvider), ("ollama", OllamaProvider)]:
+        for name, provider_cls in [("openrouter", OpenRouterProvider)]:
             try:
                 registry.register(provider_cls())
             except Exception as exc:
