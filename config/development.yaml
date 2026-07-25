@@ -1,0 +1,14 @@
+# Development environment overrides
+
+environment: "development"
+debug: true
+
+database:
+  echo: true
+
+logging:
+  level: "DEBUG"
+
+server:
+  host: "127.0.0.1"
+  port: 8000

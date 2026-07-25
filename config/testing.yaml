@@ -1,0 +1,13 @@
+# Testing environment overrides
+
+environment: "testing"
+debug: false
+
+database:
+  url: "sqlite:///./data/test.db"
+  echo: false
+
+logging:
+  level: "WARNING"
+  rotation: "1 day"
+  retention: "7 days"

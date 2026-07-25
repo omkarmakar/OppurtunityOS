@@ -1,0 +1,36 @@
+# Default application configuration
+# Environment-specific overrides live in {environment}.yaml and are
+# deep-merged on top of this file.
+
+app_name: "OpportunityOS"
+version: "0.1.0"
+environment: "development"
+debug: true
+
+database:
+  url: "sqlite:///./data/opportunity.db"
+  echo: false
+  pool_size: 5
+  max_overflow: 10
+
+logging:
+  level: "DEBUG"
+  rotation: "1 day"
+  retention: "30 days"
+  directory: "logs"
+
+server:
+  host: "127.0.0.1"
+  port: 8000
+  allowed_origins:
+    - "*"
+
+plugins:
+  enabled_plugins: []
+  plugin_dir: "plugins"
+
+paths:
+  data_dir: "data"
+  config_dir: "config"
+  log_dir: "logs"
+  asset_dir: "assets"

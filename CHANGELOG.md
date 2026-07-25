@@ -1,0 +1,226 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [0.9.0] - 2026-07-25
+
+### Added
+
+- **Thread safety**: Added `threading.Lock` to `BackgroundScheduler._tasks` dict (add/remove/get/list are now atomic); `AICache` all public methods (get, set, clear, size, invalidate); `TokenCounter` singleton uses double-checked locking
+- **Security**: SSRF protection in `ContentExtractor._validate_url()` — blocks private/reserved IPs (10/8, 172.16/12, 192.168/16, 127/8, 169.254/16, ::1, fc00::/7, fe80::/10), localhost, .local/.internal/.lan hostnames, and non-http schemes
+- **Security**: Gemini API key moved from query string (`?key=...`) to `x-goog-api-key` header (prevents credential leakage in request logs)
+- **Security**: Credential redaction in `GET /api/v1/settings` — database passwords are replaced with `****` in the response
+- **Security**: In-memory sliding-window rate limiter middleware — `RateLimitMiddleware` with per-route limits (10 req/min for AI, 5 req/min for pipeline, 20 req/min for content extraction); exempts health/version; disabled in debug mode
+- **Performance**: Parallel AI scoring — `score_multiple_and_save()` uses `asyncio.Semaphore(5)` + `asyncio.gather()` to score opportunities concurrently instead of sequentially
+- **Performance**: N+1 query fix in dashboard — bookmark rows use `joinedload(Bookmark.opportunity)`; bookmark ID set queries only `opportunity_id` column instead of full ORM objects
+- **Performance**: Deferred SQLAlchemy engine — `create_engine()` moved from module import time to first-use via `get_engine()` with `__getattr__` module proxy (faster startup, avoids side effects)
+- **Performance**: Dashboard response caching — `QueryCache` with 15-second TTL caches the full dashboard response per user
+- **Caching**: Generic `QueryCache` utility — thread-safe TTL cache with `get_or_set()`, `invalidate()`, `invalidate_pattern()`, `max_size` eviction
+- **Error handling**: Bare `except: pass` in `SearchExecutor` replaced with `logger.warning` (search query failures are now visible); AI registry and search registry `except Exception: pass` replaced with `logger.debug` (failures are logged at debug level); content extractor step failures logged at warning level
+- **Documentation**: Docstrings added to `QueryCache`, `RateLimitMiddleware`, `BackgroundScheduler._tick()`
+- **Tests**: 37 new tests across 5 new test files:
+  - `test_cache.py` — 9 tests: get/set, miss, get_or_set, expiry, invalidate, pattern invalidate, max-size eviction, thread safety, clear
+  - `test_thread_safety.py` — 5 tests: AICache concurrent access, AICache clear-during-read, TokenCounter singleton, scheduler concurrent add/remove, scheduler tasks property snapshot
+  - `test_rate_limit.py` — 4 tests: normal requests pass, excess blocked, health exempted, route-specific limits
+  - `test_settings_redaction.py` — 4 tests: password redacted, no-password unchanged, username-only, empty URL
+  - `test_content_extractor_security.py` — 13 tests: 10 private/internal URL rejections + 3 allowed external URL validations
+
+### Changed
+
+- **database/session.py**: `engine` is now lazily initialized via `get_engine()` with `__getattr__` module proxy; `SessionLocal` still eagerly initialized but triggers engine lazily
+- **backend/main.py**: `_scheduler` type changed from `Any` to `BackgroundScheduler | None`; rate limiter only active when `cfg.debug == False`
+- **services/cache.py**: New file — generic `QueryCache` class
+- **backend/middleware/rate_limit.py**: New file — `RateLimitMiddleware` Starlette middleware
+- **backend/utils/__init__.py**: Removed (empty directory deleted)
+- **frontend/pages/profile.py**: Removed unused `QCheckBox` import
+- **frontend/pages/notifications.py**: Removed unused `QFont` import
+- **tests/database/test_models.py**: Removed unused `text` import
+- **tests/services/test_search_providers.py**: Removed unused `os`, `asyncio` imports
+- **services/content_extractor/extractor.py**: Extended with `_validate_url()` SSRF guard and `_BLOCKED_NETWORKS` constant
+
+## [0.8.0] - 2026-07-25
+
+### Added
+
+- Plugin-style search provider architecture (`services/search/`):
+  - `SearchProvider` — abstract base with `name` property and `async search(query, count, offset)` method
+  - `SearchResult` dataclass (title, url, snippet, source, raw)
+  - `SearchRegistry` — provider registry with `register()`, `get()`, `list()`, and `default()` factory
+- `BraveSearchProvider` — real Brave Search API integration via httpx, requires API key
+- `DummyProvider` — hardcoded test/development provider (no external dependencies)
+- `BraveSearchSettings` config model with `api_key` and `base_url` fields
+- Config wiring: `AppConfig.brave_search` nested settings domain (env var: `OOS_BRAVE_SEARCH__API_KEY`)
+- `pytest-asyncio` dev dependency with `asyncio_mode = "auto"`
+- 14 search provider tests (SearchResult, DummyProvider, BraveProvider error handling, Registry CRUD + custom provider registration)
+
+### Changed
+
+- **core/config/settings.py**: Added `BraveSearchSettings` domain; integrated into `AppConfig`
+
+## [0.7.0] - 2026-07-25
+
+### Added
+
+- Resume parsing module (`services/resume_parser/`) — deterministic extraction without AI:
+  - `file_reader.py` — reads `.pdf` (pypdf) and `.docx` (python-docx) to plain text
+  - `parser.py` — section-based parser detecting `SKILLS`, `EXPERIENCE`, `EDUCATION`, `PROJECTS` headers; uses regex for dates, bullet-point descriptions, comma-separated skill lists
+  - `ParseResult` dataclass with `skills`, `projects`, `education`, `experience` fields
+- Two API endpoints:
+  - `POST /api/v1/resume/parse` — upload resume file, returns parsed data without storing
+  - `POST /api/v1/resume/parse-and-save/{user_id}` — parse and update profile in one call
+- `projects` JSON column on `profiles` table + Alembic migration 003
+- `ProjectEntry` Pydantic schema (name, description, technologies, url)
+- `ResumeParseResponse` schema with all parsed sections
+- GUI integration: "Resume Parser" section on Profile page — Browse + Parse & Fill button auto-populates skills, education, experience, and projects from a selected PDF/DOCX
+- Dependencies: `pypdf`, `python-docx`, `python-multipart`
+- 5 resume API tests covering DOCX parsing, section detection, invalid file rejection, parse-and-save flow, and missing profile handling
+
+### Changed
+
+- **database/models/profiles.py**: Added `projects` JSON column
+- **backend/schemas/profiles.py**: Added `ProjectEntry` schema; `projects` field in `ProfileCreate`, `ProfileUpdate`, `ProfileResponse`; new `ResumeParseResponse` schema
+- **frontend/pages/profile.py**: Added resume upload section with browse and parse-and-fill functionality
+
+## [0.6.0] - 2026-07-25
+
+### Added
+
+- Profile management with full CRUD (database, API, GUI):
+  - **Database**: 11 new columns on `profiles` table — `education` (JSON), `experience` (JSON), `skills` (JSON), `preferred_locations` (JSON), `salary_expectations`, `target_companies` (JSON), `keywords` (JSON), `resume_path`, `linkedin_url`, `github_url`, `portfolio`
+  - **Migration 002**: Alembic upgrade adds all columns; downgrade removes them
+  - **API**: `POST/GET/PUT/DELETE /api/v1/profiles/{user_id}` with Pydantic request/response schemas (`ProfileCreate`, `ProfileUpdate`, `ProfileResponse`, `EducationEntry`, `ExperienceEntry`)
+  - **Repository**: `ProfileRepository.get_by_user_id()` and `upsert()` methods
+  - **GUI**: Full profile form with sections — Basic Info, Education (add/remove entries via dialog), Experience (add/remove entries via dialog), Skills, Preferred Locations, Target Companies, Keywords (tag inputs), Salary Expectations, Links & Documents (Resume, LinkedIn, GitHub, Portfolio)
+  - **API integration**: GUI connects to backend via httpx; Load/New/Save/Delete workflow with user ID entry
+  - 9 profile API tests covering create, duplicate (409), get, update, delete, nonexistent (404), and full field response
+
+### Changed
+
+- **database/models/profiles.py**: Extended with 11 new mapped columns for profile management
+- **database/repositories/profile_repository.py**: Added `get_by_user_id()` and `upsert()` methods
+- **database/migrations/alembic.ini**: Fixed `script_location` and `prepend_sys_path` for correct path resolution
+- **backend/api/v1/endpoints/profiles.py**: New CRUD router registered in main.py
+- **frontend/pages/profile.py**: Replaced placeholder with full interactive form
+
+## [0.5.0] - 2026-07-25
+
+### Added
+
+- FastAPI backend with full API structure:
+  - `GET /api/v1/health` — returns status + database connectivity check
+  - `GET /api/v1/version` — returns app name, version, Python runtime
+  - `GET /api/v1/settings` — returns full serialized config (domains: database, logging, server, plugins, paths)
+- Pydantic response schemas (`backend/schemas/`) with OpenAPI/Swagger documentation
+- Dependency injection via `FastAPI Depends`:
+  - `get_db()` — database session
+  - `get_app_config()` — application configuration
+  - `get_config_provider()` — configuration provider
+- Lifespan-based startup (`init_db()` on application start)
+- 15 API endpoint tests (health, version, settings)
+
+### Changed
+
+- **backend/main.py**: Replaced deprecated `on_event` with `lifespan` context manager; includes health, version, and settings routers
+- **backend/api/v1/endpoints/health.py**: Extended with database connectivity check via `SELECT 1`
+- **backend/api/deps.py**: Added `get_app_config()` and `get_config_provider()` DI functions
+
+## [0.4.0] - 2026-07-25
+
+### Added
+
+- Desktop application shell with PySide6
+- Dark theme stylesheet (`frontend/theme.py`) — deep dark palette (#0f0f1a bg, purple accent #7c3aed)
+- Sidebar navigation (`frontend/widgets/sidebar.py`) — 8 nav items with unicode icons, active state highlighting, brand header, version footer
+- 8 placeholder page widgets (`frontend/pages/`):
+  - `DashboardPage`, `ProfilePage`, `SearchPage`, `OpportunitiesPage`
+  - `BookmarksPage`, `NotificationsPage`, `SettingsPage`, `LogsPage`
+- `PageWidget` base class with header, separator, and centered placeholder content
+- `QStackedWidget` page switching driven by sidebar signals
+- Resizable window (min 1024×768, default 1280×800)
+- Status bar with navigation feedback
+- 5 Qt GUI tests covering window properties, sidebar, page stack, and navigation
+
+### Changed
+
+- **frontend/windows/main_window.py**: Replaced stub with full sidebar + stacked page layout
+- **pyproject.toml**: Added `pytest-qt` dev dependency for Qt GUI testing
+
+## [0.3.0] - 2026-07-25
+
+### Added
+
+- Complete database layer with SQLAlchemy ORM models for 8 domain entities:
+  - `users`, `profiles`, `sources`, `searches`, `opportunities`, `bookmarks`, `notifications`, `application_settings`
+- Generic `BaseRepository[ModelT]` with `get/list/add/update/delete/count/exists`
+- 8 concrete repository classes (`UserRepository`, `ProfileRepository`, `SourceRepository`, `SearchRepository`, `OpportunityRepository`, `BookmarkRepository`, `NotificationRepository`, `ApplicationSettingsRepository`)
+- Initial Alembic migration (`001_create_all_tables.py`) — creates all 8 tables with FK constraints, indexes, and unique constraints
+- Repository pattern with filter support (`list(**filters)`, `count(**filters)`)
+- Relationship query methods on concrete repos (`get_with_profile`, `get_with_sources`, `list_by_status`, `count_by_priority`)
+- UUID primary keys, server-default timestamps, cascade deletes on user
+- 47 database tests covering table schema, model CRUD, relationships, constraints, timestamps, and repository operations
+
+### Changed
+
+- **pyproject.toml**: Added `[tool.hatch.build.targets.wheel]` packages config for build system compatibility
+- **database/migrations/env.py**: Imports `database.models` for Alembic autodetection
+- **database/session.py**: Imports models before `Base.metadata.create_all()` in `init_db()`
+- **database/__init__.py**: Exports all models, repositories, session, engine, init_db
+
+## [0.2.0] - 2026-07-25
+
+### Added
+
+- Complete configuration system with three-tier loading
+- `AppConfig` Pydantic model with nested settings domains:
+  - `DatabaseSettings` (url, echo, pool_size, max_overflow)
+  - `LoggingSettings` (level, rotation, retention, directory)
+  - `ServerSettings` (host, port, allowed_origins)
+  - `PluginSettings` (enabled_plugins, plugin_dir)
+  - `PathSettings` (data_dir, config_dir, log_dir, asset_dir)
+- Input validation with Pydantic field validators:
+  - Environment must be one of development/testing/production
+  - Port range validation (1–65535)
+  - Log level must be a valid Loguru level
+  - Database URL scheme validation
+- Auto-load `get_config()` singleton with lazy initialisation
+- `reload_config()` for testing and environment switching
+- `ConfigurationProvider` class for dependency injection
+- Environment overrides via `OOS_*` prefixed env vars with `__` nested delimiter
+- Environment-specific YAML files: `testing.yaml`, `production.yaml`
+- Deep-merge algorithm for multi-environment YAML layering
+- `OOS_CONFIG_DIR` env var for custom config directory resolution
+- `python-dotenv` for `.env` file support
+
+### Changed
+
+- **database/session.py**: Engine and session factory now derive from
+  `get_config()` instead of a flat module-level settings object
+- **backend/core/config.py**: Delegates to unified `AppConfig` via
+  `get_backend_config()`
+- **backend/core/logging.py**: Reads log level, rotation, retention from config
+- **backend/main.py**: Uses config for title, version, debug, CORS origins
+- **.env.example**: Updated to `OOS_*` prefix format with all documented options
+- YAML config files restructured to match Pydantic model hierarchy
+
+### Removed
+
+- Standalone `AppSettings(BaseSettings)` in `core/config/settings.py`
+  (replaced by the multi-domain `AppConfig` model)
+
+## [0.1.0] - 2026-07-25
+
+### Added
+
+- Project scaffold with clean architecture layout
+- FastAPI backend with health endpoint
+- PySide6 GUI application stub
+- SQLAlchemy ORM with Alembic migrations
+- Loguru logging configuration
+- Pydantic settings management
+- YAML-based configuration
+- Plugin system base classes
+- Service layer abstractions
+- Test suite with pytest
+- Ruff and Black code quality tooling
+- uv package manager configuration
+- MIT License

@@ -1,0 +1,93 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "opportunityos"
+version = "0.1.0"
+description = "A modular desktop application platform"
+requires-python = ">=3.13"
+license = "MIT"
+authors = [
+    { name = "OpportunityOS" },
+]
+
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pyside6>=6.8.0",
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.14.0",
+    "loguru>=0.7.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.6.0",
+    "pyyaml>=6.0.0",
+    "python-dotenv>=1.0.0",
+    "pypdf>=6.14.2",
+    "python-docx>=1.2.0",
+    "python-multipart>=0.0.32",
+    "trafilatura>=2.1.0",
+    "chromadb>=0.5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "pytest-qt>=4.4.0",
+    "httpx>=0.28.0",
+    "ruff>=0.7.0",
+    "black>=24.10.0",
+    "hatchling>=1.27.0",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.black]
+line-length = 100
+target-version = ["py313"]
+
+[project.entry-points."opportunityos.plugins"]
+competitions = "plugins.bundled.competitions:CompetitionFinderPlugin"
+conferences = "plugins.bundled.conferences:ConferenceFinderPlugin"
+grants = "plugins.bundled.grants:GrantFinderPlugin"
+hackathons = "plugins.bundled.hackathons:HackathonFinderPlugin"
+internships = "plugins.bundled.internships:InternshipFinderPlugin"
+jobs = "plugins.bundled.jobs:JobFinderPlugin"
+research_papers = "plugins.bundled.research_papers:ResearchPaperFinderPlugin"
+scholarships = "plugins.bundled.scholarships:ScholarshipFinderPlugin"
+startup_hiring = "plugins.bundled.startup_hiring:StartupHiringFinderPlugin"
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "core/",
+    "database/",
+    "backend/",
+    "frontend/",
+    "services/",
+    "plugins/",
+    "config/",
+    "scripts/",
+    "assets/",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"
+asyncio_mode = "auto"
+
+[dependency-groups]
+dev = [
+    "pytest-asyncio>=1.4.0",
+    "pytest-qt>=4.5.0",
+]
