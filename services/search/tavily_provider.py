@@ -8,7 +8,7 @@ API notes (verified against https://docs.tavily.com/documentation/api-reference/
 - Endpoint: POST https://api.tavily.com/search
 - Auth: Authorization: Bearer <api_key>  (NOT a body field — the docs
   and some older SDKs vary; the current REST API uses the Bearer header)
-- Request body fields used here: query, max_results, search_depth,
+- Request body fields used here: query, max_results, search_depth, topic,
   include_raw_content
 - Response: results[] where each item has title, url, content (NLP
   summary, ≤500 chars per chunk by default), score (float relevance),
@@ -81,6 +81,8 @@ class TavilySearchProvider(SearchProvider):
             "max_results": min(count, 20),
             # basic depth: 1 API credit, one NLP summary per URL, low latency
             "search_depth": "basic",
+            # topic is required by Tavily API: 'general' or 'news'
+            "topic": "general",
             # Request raw page content so it can be surfaced via
             # SearchResult.raw without a separate content-extractor fetch.
             # This does NOT change the pipeline contract — raw is an
@@ -100,11 +102,30 @@ class TavilySearchProvider(SearchProvider):
                 timeout=15,
             )
 
+        if resp.status_code == 404:
+            raise RuntimeError(
+                f"Tavily API endpoint not found (HTTP 404) at '{self._base_url}'. "
+                "Please verify that OOS_TAVILY__BASE_URL is set to 'https://api.tavily.com/search'."
+            )
+
+        if resp.status_code == 401:
+            raise RuntimeError(
+                "Tavily API authentication failed (HTTP 401). "
+                "Please check your API key in OOS_TAVILY__API_KEY or at https://app.tavily.com/home."
+            )
+
         if resp.status_code == 429:
             raise RuntimeError(
                 "Tavily API rate limit reached (HTTP 429). "
                 "You may have exhausted your monthly credit allowance. "
                 "Check your usage at https://app.tavily.com/home."
+            )
+
+        if resp.status_code >= 500:
+            error_detail = resp.text
+            raise RuntimeError(
+                f"Tavily API server error (HTTP {resp.status_code}). "
+                f"Response: {error_detail}"
             )
 
         resp.raise_for_status()

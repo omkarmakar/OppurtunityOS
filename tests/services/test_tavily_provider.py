@@ -163,7 +163,7 @@ class TestTavilyProviderSearch:
 
     @pytest.mark.asyncio
     async def test_bearer_auth_header_sent(self) -> None:
-        """Auth must use Authorization: Bearer, not a body api_key field."""
+        """Auth uses Authorization: Bearer header only (not in body)."""
         mock_resp = _make_response([])
         with patch("httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
@@ -178,7 +178,6 @@ class TestTavilyProviderSearch:
         call_kwargs = mock_client.post.call_args
         headers = call_kwargs.kwargs.get("headers", {})
         assert headers.get("Authorization") == "Bearer tvly-mykey"
-        # api_key must NOT appear in the request body
         body = call_kwargs.kwargs.get("json", {})
         assert "api_key" not in body
 
@@ -281,6 +280,34 @@ class TestRawContent:
 
 
 class TestErrorHandling:
+    @pytest.mark.asyncio
+    async def test_404_raises_descriptive_runtime_error(self) -> None:
+        mock_resp = _make_response([], status_code=404)
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client.post = AsyncMock(return_value=mock_resp)
+            mock_client_cls.return_value = mock_client
+
+            provider = TavilySearchProvider(api_key="tvly-test")
+            with pytest.raises(RuntimeError, match="HTTP 404"):
+                await provider.search("test")
+
+    @pytest.mark.asyncio
+    async def test_401_raises_descriptive_runtime_error(self) -> None:
+        mock_resp = _make_response([], status_code=401)
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client.post = AsyncMock(return_value=mock_resp)
+            mock_client_cls.return_value = mock_client
+
+            provider = TavilySearchProvider(api_key="tvly-test")
+            with pytest.raises(RuntimeError, match="HTTP 401"):
+                await provider.search("test")
+
     @pytest.mark.asyncio
     async def test_429_raises_descriptive_runtime_error(self) -> None:
         mock_resp = _make_response([], status_code=429)

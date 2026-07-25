@@ -10,12 +10,20 @@ from services.ai import AIRegistry, ModelConfig
 from services.ai.models import AIResponse
 from services.search_pipeline.steps.base import PipelineStep
 
-QUERY_GENERATOR_PROMPT = """You are a job search query generator. Given a user's profile, generate specific, targeted search queries to find relevant job opportunities.
+QUERY_GENERATOR_PROMPT = """You are an expert job search query generator. Analyze the user's profile and create highly specific, targeted search queries that will return relevant job opportunities.
 
 User Profile:
 {profile_context}
 
-Generate {count} distinct search queries. Each query should target different aspects of the user's profile (skills, roles, industries, locations).
+Instructions:
+1. Generate {count} distinct search queries
+2. Each query should target different aspects: specific skills combinations, role variations, industry-specific terms, location-based searches
+3. Use natural language that job boards and search engines understand
+4. Include relevant keywords from the profile (skills, technologies, tools)
+5. Mix broad queries with specific niche queries
+6. Consider experience level implied by the profile
+7. If locations are specified, include location-specific queries
+8. Format queries as if typing into a job search engine (e.g., "senior python engineer remote", "full stack developer react nodejs")
 
 Return ONLY a JSON array of strings, like: ["query 1", "query 2", ...]"""
 
