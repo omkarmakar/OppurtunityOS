@@ -481,7 +481,7 @@ class SettingsPage(PageWidget):
 
         self._notif_check.setChecked(self._user_settings.get("notifications_enabled", True))
 
-        sp = self._user_settings.get("default_search_provider", "dummy")
+        sp = self._user_settings.get("default_search_provider", "tavily")
         idx = self._sp_combo.findText(sp)
         if idx >= 0:
             self._sp_combo.setCurrentIndex(idx)
