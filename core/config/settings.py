@@ -107,6 +107,7 @@ class AISettings(BaseModel):
     openai_api_key: str = Field(default="", description="OpenAI API key")
     gemini_api_key: str = Field(default="", description="Google Gemini API key")
     openrouter_api_key: str = Field(default="", description="OpenRouter API key")
+    groq_api_key: str = Field(default="", description="Groq API key")
     ollama_base_url: str = Field(
         default="http://localhost:11434",
         description="Ollama server base URL",
