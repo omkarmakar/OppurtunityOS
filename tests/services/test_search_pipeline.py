@@ -154,12 +154,12 @@ class TestContentExtractorStep:
 
 class TestOpportunityCreator:
     @pytest.mark.asyncio
-    async def test_execute_creates_opportunities(self, session) -> None:
+    async def test_execute_creates_opportunities(self, db_session) -> None:
         from services.content_extractor import ExtractedContent
         from services.search.models import SearchResult
 
         profile = Profile(id=uuid4(), user_id=uuid4())
-        step = OpportunityCreator(db=session)
+        step = OpportunityCreator(db=db_session)
         ctx = {
             "profile": profile,
             "extracted_contents": [
@@ -182,26 +182,26 @@ class TestOpportunityCreator:
         assert opp.title == "Python Dev"
 
     @pytest.mark.asyncio
-    async def test_execute_empty_extracted(self, session) -> None:
+    async def test_execute_empty_extracted(self, db_session) -> None:
         profile = Profile(id=uuid4(), user_id=uuid4())
-        step = OpportunityCreator(db=session)
+        step = OpportunityCreator(db=db_session)
         ctx = {"profile": profile, "extracted_contents": []}
         result = await step.execute(ctx)
         assert result["opportunities"] == []
 
     @pytest.mark.asyncio
-    async def test_dedup_skips_duplicate_url(self, session) -> None:
+    async def test_dedup_skips_duplicate_url(self, db_session) -> None:
         from datetime import datetime, timezone
 
         from services.content_extractor import ExtractedContent
         from services.search.models import SearchResult
 
         profile = Profile(id=uuid4(), user_id=uuid4())
-        session.add(profile)
-        session.flush()
+        db_session.add(profile)
+        db_session.flush()
 
         # First run — insert the opportunity
-        step1 = OpportunityCreator(db=session)
+        step1 = OpportunityCreator(db=db_session)
         ctx1 = {
             "profile": profile,
             "extracted_contents": [
@@ -225,7 +225,7 @@ class TestOpportunityCreator:
         first_seen = first_opp.last_seen_at
 
         # Second run — same URL should skip creation but update last_seen_at
-        step2 = OpportunityCreator(db=session)
+        step2 = OpportunityCreator(db=db_session)
         ctx2 = {
             "profile": profile,
             "extracted_contents": [
@@ -253,15 +253,15 @@ class TestOpportunityCreator:
             assert second_opp.last_seen_at >= first_seen
 
     @pytest.mark.asyncio
-    async def test_dedup_empty_url_always_creates(self, session) -> None:
+    async def test_dedup_empty_url_always_creates(self, db_session) -> None:
         from services.content_extractor import ExtractedContent
         from services.search.models import SearchResult
 
         profile = Profile(id=uuid4(), user_id=uuid4())
-        session.add(profile)
-        session.flush()
+        db_session.add(profile)
+        db_session.flush()
 
-        step = OpportunityCreator(db=session)
+        step = OpportunityCreator(db=db_session)
         ctx = {
             "profile": profile,
             "extracted_contents": [
@@ -281,15 +281,15 @@ class TestOpportunityCreator:
         assert result2["opportunities_skipped_duplicate"] == 0
 
     @pytest.mark.asyncio
-    async def test_dedup_updates_last_seen_at(self, session) -> None:
+    async def test_dedup_updates_last_seen_at(self, db_session) -> None:
         from datetime import datetime, timedelta, timezone
 
         from services.content_extractor import ExtractedContent
         from services.search.models import SearchResult
 
         profile = Profile(id=uuid4(), user_id=uuid4())
-        session.add(profile)
-        session.flush()
+        db_session.add(profile)
+        db_session.flush()
 
         # Insert a direct opportunity with a last_seen_at in the past
         from database.models.opportunities import Opportunity
@@ -300,10 +300,10 @@ class TestOpportunityCreator:
             title="Old", url="https://example.com/old",
             discovered_at=past, last_seen_at=past,
         )
-        session.add(opp)
-        session.flush()
+        db_session.add(opp)
+        db_session.flush()
 
-        step = OpportunityCreator(db=session)
+        step = OpportunityCreator(db=db_session)
         ctx = {
             "profile": profile,
             "extracted_contents": [
@@ -324,7 +324,7 @@ class TestOpportunityCreator:
 
 class TestRanking:
     @pytest.mark.asyncio
-    async def test_execute_with_dummy_provider(self, session) -> None:
+    async def test_execute_with_dummy_provider(self, db_session) -> None:
         from datetime import datetime, timezone
 
         from database.models.opportunities import Opportunity
@@ -335,19 +335,19 @@ class TestRanking:
             title="Python Job", description="Build stuff",
             discovered_at=datetime.now(timezone.utc),
         )
-        session.add(opp)
-        session.flush()
+        db_session.add(opp)
+        db_session.flush()
 
-        step = AIRankingStep(db=session)
+        step = AIRankingStep(db=db_session)
         ctx = {"profile": profile, "opportunities": [opp]}
         result = await step.execute(ctx)
         assert "scored_opportunities" in result
         assert len(result["scored_opportunities"]) == 1
 
     @pytest.mark.asyncio
-    async def test_execute_no_opportunities(self, session) -> None:
+    async def test_execute_no_opportunities(self, db_session) -> None:
         profile = Profile(id=uuid4(), user_id=uuid4())
-        step = AIRankingStep(db=session)
+        step = AIRankingStep(db=db_session)
         ctx = {"profile": profile, "opportunities": []}
         result = await step.execute(ctx)
         assert result["scored_opportunities"] == []
@@ -464,14 +464,14 @@ class TestNotifierStep:
 
 class TestSearchPipeline:
     @pytest.mark.asyncio
-    async def test_full_pipeline_with_dummy_provider(self, session) -> None:
+    async def test_full_pipeline_with_dummy_provider(self, db_session) -> None:
         profile = Profile(
             id=uuid4(), user_id=uuid4(),
             skills=["Python", "FastAPI"],
             preferred_locations=["Remote"],
         )
-        session.add(profile)
-        session.flush()
+        db_session.add(profile)
+        db_session.flush()
 
         config = PipelineConfig(
             query_count=2,
@@ -480,18 +480,18 @@ class TestSearchPipeline:
             ai_ranking_enabled=True,
             content_extractor_enabled=True,
         )
-        pipeline = SearchPipeline(db=session, config=config)
+        pipeline = SearchPipeline(db=db_session, config=config)
         result = await pipeline.run(profile)
         assert result.success is True
 
     @pytest.mark.asyncio
-    async def test_pipeline_without_ranking(self, session) -> None:
+    async def test_pipeline_without_ranking(self, db_session) -> None:
         profile = Profile(
             id=uuid4(), user_id=uuid4(),
             skills=["Python"],
         )
-        session.add(profile)
-        session.flush()
+        db_session.add(profile)
+        db_session.flush()
 
         config = PipelineConfig(
             ai_ranking_enabled=False,
@@ -499,16 +499,16 @@ class TestSearchPipeline:
             search_provider="dummy",
             search_result_count=2,
         )
-        pipeline = SearchPipeline(db=session, config=config)
+        pipeline = SearchPipeline(db=db_session, config=config)
         result = await pipeline.run(profile)
         assert result.success is True
         assert result.opportunities_scored == 0
 
     @pytest.mark.asyncio
-    async def test_pipeline_disabled_steps(self, session) -> None:
+    async def test_pipeline_disabled_steps(self, db_session) -> None:
         profile = Profile(id=uuid4(), user_id=uuid4(), skills=["Python"])
-        session.add(profile)
-        session.flush()
+        db_session.add(profile)
+        db_session.flush()
 
         config = PipelineConfig(
             query_generator_enabled=False,
@@ -517,7 +517,7 @@ class TestSearchPipeline:
             opportunity_creator_enabled=False,
             ai_ranking_enabled=False,
         )
-        pipeline = SearchPipeline(db=session, config=config)
+        pipeline = SearchPipeline(db=db_session, config=config)
         result = await pipeline.run(profile)
         assert result.success is True
         assert result.queries_generated == []

@@ -112,8 +112,8 @@ class AISettings(BaseModel):
         default="http://localhost:11434",
         description="Ollama server base URL",
     )
-    default_provider: str = Field(default="openrouter", description="Default AI provider name")
-    default_model: str = Field(default="openrouter/free", description="Default model name - uses OpenRouter's free model router")
+    default_provider: str = Field(default="dummyai", description="Default AI provider name")
+    default_model: str = Field(default="dummy-model", description="Default model name - uses local dummy provider for fallback")
     cache_ttl: int = Field(default=300, ge=0, description="Cache TTL in seconds")
     max_retries: int = Field(default=3, ge=0, le=10, description="Max retry attempts")
 
