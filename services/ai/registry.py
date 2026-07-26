@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 
 from core.config import get_config
-from services.ai.dummy_provider import DummyAIProvider
 from services.ai.gemini_provider import GeminiProvider
 from services.ai.groq_provider import GroqProvider
 from services.ai.ollama_provider import OllamaProvider
@@ -40,9 +39,9 @@ class AIRegistry:
     @classmethod
     def default(cls) -> AIRegistry:
         registry = cls()
-        registry.register(DummyAIProvider())
-
         cfg = get_config()
+        
+        # Register real providers only with fallback chain: OpenRouter → Groq
         provider_specs: list[tuple[str, type[AIProvider], dict[str, str]]] = [
             ("openrouter", OpenRouterProvider, {"api_key": cfg.ai.openrouter_api_key}),
             ("groq", GroqProvider, {"api_key": cfg.ai.groq_api_key}),

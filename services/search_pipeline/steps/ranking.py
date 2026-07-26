@@ -41,31 +41,8 @@ class AIRankingStep(PipelineStep):
             ctx["scored_opportunities"] = []
             return ctx
 
-        try:
-            scored = await self._scorer.score_multiple_and_save(profile, opportunities)
-            self._db.flush()
-            ctx["scored_opportunities"] = scored
-        except Exception as e:
-            logger.warning(f"AI ranking failed for {len(opportunities)} opportunities: {e}. Using fallback scores.")
-            # If AI scoring fails, assign fallback scores based on keyword matching
-            fallback_scored = []
-            for opp in opportunities:
-                from services.opportunity_scorer.scorer import ScoredOpportunity
-                # Simple fallback: if profile keywords appear in opportunity, score 60, else 30
-                score = 60 if any(kw.lower() in (opp.title or "").lower() for kw in (profile.keywords or [])) else 30
-                fallback_scored.append(ScoredOpportunity(
-                    opportunity_id=str(opp.id),
-                    title=opp.title,
-                    url=opp.url or "",
-                    relevance_score=score,
-                    summary=f"Fallback score: {score}/100",
-                    pros=[],
-                    cons=[],
-                    required_skills=[],
-                    missing_skills=[],
-                    application_deadline=opp.application_deadline or "",
-                    ranking_explanation="AI ranking unavailable, fallback scoring applied",
-                ))
-            ctx["scored_opportunities"] = fallback_scored
+        scored = await self._scorer.score_multiple_and_save(profile, opportunities)
+        self._db.flush()
+        ctx["scored_opportunities"] = scored
 
         return ctx
