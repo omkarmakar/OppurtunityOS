@@ -111,7 +111,7 @@ class SearchPipeline:
             )
 
         if self._config.notifier_enabled:
-            self._steps.append(NotifierStep(notifier=self._notifier))
+            self._steps.append(NotifierStep(db=self._db, notifier=self._notifier))
 
     def _emit(self, step: str, status: str, message: str, data: dict | None = None) -> None:
         self._notifier.on_event(

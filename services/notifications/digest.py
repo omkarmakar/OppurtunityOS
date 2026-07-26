@@ -59,7 +59,7 @@ class DailyDigestService:
             self._repo.update(n)
 
         email_sent = False
-        if self._email and user_email and self._settings.include_unread_only:
+        if self._email and user_email:
             email_sent = self._email.send(
                 str(user_id),
                 f"Daily Digest — {len(unread)} new notification(s)",
@@ -81,9 +81,26 @@ class DailyDigestService:
     def _build_summary(notifications: list[Notification]) -> dict[str, Any]:
         lines = [f"You have {len(notifications)} new notification(s):\n"]
         type_counts: dict[str, int] = {}
+        
         for n in notifications:
-            lines.append(f"  \u2022 [{n.type_}] {n.title}")
             type_counts[n.type_] = type_counts.get(n.type_, 0) + 1
+            
+            if n.type_ == "opportunity":
+                # For opportunity notifications, include score and URL from metadata
+                try:
+                    metadata = json.loads(n.metadata_json) if n.metadata_json else {}
+                    score = metadata.get("score", 0)
+                    url = metadata.get("url", "")
+                    line = f"  \u2022 {n.title} (score {score:.0f}/100)"
+                    if url:
+                        line += f"\n    {url}"
+                    lines.append(line)
+                except Exception:
+                    lines.append(f"  \u2022 {n.title}")
+            else:
+                # For other types, use title
+                lines.append(f"  \u2022 [{n.type_}] {n.title}")
+        
         return {
             "text": "\n".join(lines),
             "metadata": {

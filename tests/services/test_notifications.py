@@ -277,6 +277,90 @@ class TestDailyDigestService:
         assert summary["metadata"]["total"] == 2
         assert summary["metadata"]["type_counts"] == {"info": 1, "warning": 1}
 
+    def test_email_sends_regardless_of_include_unread_only_setting(self, db_session: Session) -> None:
+        """Test that include_unread_only doesn't gate email sending."""
+        svc = NotificationService(db_session)
+        uid = uuid.uuid4()
+        svc.create_notification(uid, "info", "Digest item")
+
+        email_mock = MagicMock()
+        email_mock.send.return_value = True
+
+        config = AppConfig()
+        config.notifications.digest.include_unread_only = False  # This should NOT prevent email
+        digest_svc = DailyDigestService(db_session, email_provider=email_mock, settings=config.notifications.digest)
+        result = digest_svc.run(uid, user_email="user@test.com")
+        
+        # Email should still be sent despite include_unread_only=False
+        assert result["email_sent"] is True
+        email_mock.send.assert_called_once()
+
+    def test_digest_body_includes_opportunity_score_and_url(self, db_session: Session) -> None:
+        """Test that opportunity notifications in digest include score and URL from metadata."""
+        import json
+
+        svc = NotificationService(db_session)
+        uid = uuid.uuid4()
+        
+        # Create an opportunity notification with metadata
+        metadata = {
+            "opportunity_id": "opp123",
+            "score": 87.5,
+            "url": "https://example.com/job",
+        }
+        svc.create_notification(
+            uid, "opportunity",
+            title="New opportunity: Research Intern",
+            message="Score: 88/100 — https://example.com/job",
+            channel="in_app",
+            metadata=metadata,
+        )
+        
+        # Build digest
+        digest_svc = DailyDigestService(db_session)
+        result = digest_svc.run(uid)
+        
+        assert result["notifications_count"] == 1
+        
+        # Check the digest body includes score and URL
+        summary_text = result.get("digest_text", "")
+        
+        # Get the digest from the database to check the actual body
+        repo = NotificationRepository(db_session)
+        digests = repo.list_unread_by_channel(uid, "in_app")
+        digest_notif = next((n for n in digests if n.type_ == "digest"), None)
+        assert digest_notif is not None
+        
+        digest_body = digest_notif.message or ""
+        # Should include score information
+        assert "score" in digest_body.lower() or "87" in digest_body or "88" in digest_body
+        # Should include URL
+        assert "https://example.com/job" in digest_body or "example.com" in digest_body
+
+    def test_digest_respects_include_unread_only_for_query(self, db_session: Session) -> None:
+        """Test that include_unread_only still affects which notifications are queried for digest content."""
+        svc = NotificationService(db_session)
+        uid = uuid.uuid4()
+        
+        # Create multiple notifications
+        n1 = svc.create_notification(uid, "info", "Unread notification")
+        n2 = svc.create_notification(uid, "warning", "Read notification")
+        svc.mark_as_read(n2.id)
+        
+        config = AppConfig()
+        config.notifications.digest.include_unread_only = True  # Only include unread
+        digest_svc = DailyDigestService(db_session, settings=config.notifications.digest)
+        result = digest_svc.run(uid)
+        
+        # Only unread notification should be in digest
+        assert result["notifications_count"] == 1
+        
+        repo = NotificationRepository(db_session)
+        digests = repo.list_unread_by_channel(uid, "in_app")
+        digest_notif = next((n for n in digests if n.type_ == "digest"), None)
+        assert digest_notif is not None
+        assert "Unread notification" in (digest_notif.message or "")
+
 
 # ── NotificationScheduler ────────────────────────────────────────────
 

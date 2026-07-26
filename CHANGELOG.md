@@ -6,6 +6,21 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **P13 — UI for manual digest trigger and email testing**: Added two new buttons to
+  the Notifications page (`frontend/pages/notifications.py`):
+  1. **"Send Digest Now"** button (green): Calls `POST /notifications/digest/trigger`
+     and displays a toast/label with the result (e.g., "Digest sent — 4 items" or
+     "No new notifications to send"). On success, auto-refreshes the notification
+     list after 3 seconds so users see new in-app notifications immediately.
+  2. **"Test Email"** button (amber): Prompts for an email address via input dialog
+     and calls `POST /notifications/test-email` with that address. Displays success/failure
+     feedback in the header label, allowing users to verify SMTP configuration works
+     without waiting for a scheduled digest cycle.
+  - Full test coverage in `tests/frontend/test_notifications_page.py`.
+  - Buttons are styled consistently with existing page buttons and include hover effects.
+  - Tests use mocking to avoid requiring a display server; integration tests can be
+    run manually on a development machine with PyQt6/PySide6 available.
+
 - **Groq AI provider support**: Integrated Groq as a second free-tier AI provider
   alongside OpenRouter. Groq offers no-credit-card-required free tier and
   officially documented rate limits (30 requests/minute, 500/day). New provider:
@@ -22,6 +37,27 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **P12 — Notifications pipeline was never persisting to database**: `NotifierStep`
+  (`services/search_pipeline/steps/notifier.py`) was only emitting console log
+  events via `LoggingNotifier` and never actually calling `NotificationService`
+  to persist `Notification` DB rows. This caused the digest email to find zero
+  unread notifications and never send anything. Fixed by:
+  1. Modified `NotifierStep` to accept a `db: Session` parameter (same pattern
+     as `OpportunityCreator`) and use `NotificationService` to create DB records
+     for each scored opportunity above a threshold (default: score >= 50/100), capped
+     at 10 per pipeline run to prevent user notification flooding.
+  2. Always creates a `type_="pipeline_run"` summary notification even if no
+     individual opportunities meet the threshold, so users see pipeline activity.
+  3. Fixed email-send gating bug in `DailyDigestService.run()`: the `if self._email
+     and user_email and self._settings.include_unread_only:` condition was treating
+     `include_unread_only` (a digest *content* filter) as an email *send* toggle;
+     changed to `if self._email and user_email:` so email now sends regardless of
+     that setting. The setting still correctly filters which notifications are
+     *queried* for digest content (unread-only vs. all).
+  4. Enhanced `DailyDigestService._build_summary()` to render opportunity
+     notifications with score and URL from metadata (e.g., "Research Intern
+     (score 87/100) https://example.com/job") instead of bare titles, making
+     digests actionable without requiring users to view in-app notifications.
 - **BUG: OpenRouter provider using fake/unverified models**: The OpenRouter
   provider was using a non-existent default model ID (`"openrouter/free"`,
   which has no direct equivalent on OpenRouter's API) and a hardcoded
