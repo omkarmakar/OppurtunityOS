@@ -6,6 +6,28 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Plugins now actually connected to the live search flow**: The 9 bundled
+  finder plugins (internships, jobs, research_papers, grants, hackathons,
+  conferences, competitions, startup_hiring, scholarships) were fully built
+  with `pyproject.toml` entry points declared but were never discovered at
+  runtime — nothing called `importlib.metadata.entry_points()` to load them.
+  - `plugins/loader.py` — new module with `discover_entry_point_classes()`
+    (uses `importlib.metadata.entry_points(group="opportunityos.plugins")`,
+    falls back to the hardcoded `ALL_BUNDLED_PLUGINS` list when not installed
+    editable) and `load_bundled_plugins(enabled_plugins)` which instantiates
+    and initialises the filtered set.
+  - `SearchExecutor` now loads plugin `SearchProvider` instances and runs
+    each query through both the primary provider AND every enabled plugin's
+    provider, collecting results with cross-provider URL dedup. This means
+    every pipeline run automatically fetches domain-specialized results
+    (internship listings, research papers, grants, etc.) alongside general
+    job-board results.
+  - `PipelineConfig` gains an `enabled_plugins: list[str] | None` field
+    (default `None` = all discovered plugins active).
+  - **Semantics**: empty `enabled_plugins` = all enabled (opt-out model for
+    bundled first-party plugins). Set a non-empty list to restrict to specific
+    plugins by `plugin_name`.
+
 - **SearchExecutor now persists Search rows per query**: Each query run
   through the search provider during a pipeline execution creates a new
   `Search` row via `SearchRepository` with `query`, `user_id`,
@@ -41,6 +63,57 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Migration 010 broken on fresh SQLite — unnamed UNIQUE constraint drop failed**:
+  Migration `010_multi_profile.py` called
+  `batch_op.drop_constraint("uq_profiles_user_id", type_="unique")` but the
+  original constraint in migration 001 was created as
+  `sa.UniqueConstraint("user_id")` with no explicit name. On SQLite this
+  constraint has no stored name, so Alembic's batch mode could not find it
+  by the guessed name and raised `ValueError`. Anyone cloning the repo fresh
+  and running `alembic upgrade head` would hit this failure.
+  - **Fix**: Added `naming_convention={"uq": "uq_%(table_name)s_%(column_0_N_name)s"}`
+    to the `batch_alter_table` call for the `profiles` table. This is Alembic's
+    documented pattern for dropping unnamed constraints on SQLite — the naming
+    convention assigns a predictable name during reflection so that
+    `drop_constraint` matches correctly. Also added `recreate="always"` for
+    explicitness (SQLite already requires batch recreate, but this makes the
+    intent clear).
+  - Also moved the `opportunities` table changes (add `profile_id` column, FK,
+    index) into a `batch_alter_table` context, since `op.create_foreign_key`
+    fails on SQLite outside batch mode (`NotImplementedError: No support for
+    ALTER of constraints in SQLite dialect`).
+  - Both `upgrade()` and `downgrade()` now use `batch_alter_table` with
+    `recreate="always"` for both `profiles` and `opportunities`.
+
+- **Migration 005 downgrade failed — index not dropped before column**:
+  `005_add_notification_fields.py:downgrade()` called
+  `op.drop_column("notifications", "digest_id")` but the column had an
+  associated index `ix_notifications_digest_id` (created by `index=True` in
+  the upgrade). On SQLite, `ALTER TABLE ... DROP COLUMN` checks that no
+  indexes reference the column; the operation failed with
+  `OperationalError: error in index ix_notifications_digest_id after drop
+  column: no such column: digest_id`. Fixed by adding
+  `op.drop_index("ix_notifications_digest_id", table_name="notifications")`
+  before the `drop_column` call. (Discovered by the new
+  `test_migration_chain.py` test which runs the complete downgrade chain.)
+
+- **`.env.example` drift — missing Notifications, Scheduler, Memory, Plugins vars**:
+  `.env.example` was missing the entire Notifications section (`OOS_NOTIFICATIONS__*`),
+  the Memory and Plugins sections, and about a dozen
+  `OOS_BACKGROUND_SCHEDULER__*` vars (digest sub-task, pipeline tuning knobs,
+  master switches). Also fixed `OOS_AI__OLLAMA__BASE_URL` → `OOS_AI__OLLAMA_BASE_URL`
+  (double `__` would map to a non-existent `ai.ollama.base_url`). Full cross-check
+  against `get_config()` usage confirmed no stale entries in the example file beyond
+  the Ollama naming bug. See `.env.example` for the complete list.
+
+### Removed
+
+- **`scripts/fix_profile_unique.py` and `scripts/migrate_profile.py`** — these
+  raw SQLite scripts were manual workarounds for the same migration 010 bug
+  described above. With the fixed migration handling the constraint drop
+  correctly end-to-end via Alembic batch mode, these scripts are no longer
+  needed and have been deleted.
+
 - **P14 — AI fallback chain: openrouter → groq → gemini → fail (no dummy/mock)**:
   Corrected the automatic fallback chain used by query generation and opportunity
   scoring. Previously the chain was hardcoded as `["groq", "openrouter"]` in two
@@ -75,6 +148,15 @@ All notable changes to this project will be documented in this file.
      removed `dummyai` provider.
 
 ### Added
+
+- **`tests/database/test_migration_chain.py` — full migration chain integration test**:
+  Runs `alembic upgrade head` against a fresh temp SQLite database file from
+  migration 001 all the way through 010, then `alembic downgrade base`, then
+  `alembic upgrade head` again. Verifies the complete cycle succeeds and that
+  migration 010's schema changes (no UNIQUE on profiles.user_id,
+  `ix_profiles_user_id` index, `name` column, `profile_id` column on
+  opportunities) are all present. This test would have caught the original
+  migration 010 bug on fresh databases.
 
 - **LaTeX resume parsing support**: `services/resume_parser/file_reader.py` now
   handles `.tex` files via new `read_tex()` function. Uses `pylatexenc` library

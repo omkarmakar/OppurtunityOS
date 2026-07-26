@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from core.config import get_config
@@ -15,6 +15,13 @@ _SessionLocal: sessionmaker[Session] | None = None
 
 def _get_config():
     return get_config()
+
+
+def _set_sqlite_pragma(dbapi_connection, connection_record):
+    """Enable foreign key enforcement on every new SQLite connection."""
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
 def get_engine():
@@ -28,6 +35,8 @@ def get_engine():
             max_overflow=cfg.database.max_overflow,
             connect_args={"check_same_thread": False},
         )
+        if cfg.database.url.startswith("sqlite"):
+            event.listen(_engine, "connect", _set_sqlite_pragma)
     return _engine
 
 

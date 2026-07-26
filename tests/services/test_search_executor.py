@@ -10,14 +10,25 @@ from sqlalchemy.orm import Session
 
 from database.models.profiles import Profile
 from database.models.searches import Search
+from database.models.users import User
 from database.repositories.search_repository import SearchRepository
 from services.search_pipeline.steps.search_executor import SearchExecutor
+
+
+def _profile(db_session: Session) -> Profile:
+    uid = uuid4()
+    db_session.add(User(id=uid, email=f"{uid}@test.com", password_hash="test-hash"))
+    db_session.flush()
+    p = Profile(id=uuid4(), user_id=uid)
+    db_session.add(p)
+    db_session.flush()
+    return p
 
 
 class TestSearchExecutorRowCreation:
     @pytest.mark.asyncio
     async def test_creates_search_row_per_query(self, db_session: Session) -> None:
-        profile = Profile(id=uuid4(), user_id=uuid4())
+        profile = _profile(db_session)
         step = SearchExecutor(provider_name="dummy", result_count=5)
         ctx = {
             "queries": ["python developer", "fastapi jobs"],
@@ -36,7 +47,7 @@ class TestSearchExecutorRowCreation:
 
     @pytest.mark.asyncio
     async def test_result_count_per_query(self, db_session: Session) -> None:
-        profile = Profile(id=uuid4(), user_id=uuid4())
+        profile = _profile(db_session)
         step = SearchExecutor(provider_name="dummy", result_count=3)
         ctx = {
             "queries": ["test query"],
@@ -53,7 +64,7 @@ class TestSearchExecutorRowCreation:
 
     @pytest.mark.asyncio
     async def test_failed_query_creates_row_with_zero_count(self, db_session: Session) -> None:
-        profile = Profile(id=uuid4(), user_id=uuid4())
+        profile = _profile(db_session)
         step = SearchExecutor(provider_name="dummy", result_count=3)
         ctx = {
             "queries": ["good query", "bad query"],
@@ -83,7 +94,7 @@ class TestSearchExecutorRowCreation:
 
     @pytest.mark.asyncio
     async def test_row_count_equals_query_count(self, db_session: Session) -> None:
-        profile = Profile(id=uuid4(), user_id=uuid4())
+        profile = _profile(db_session)
         step = SearchExecutor(provider_name="dummy", result_count=3)
         queries = [f"query {i}" for i in range(5)]
         ctx = {
@@ -99,7 +110,7 @@ class TestSearchExecutorRowCreation:
 
     @pytest.mark.asyncio
     async def test_empty_queries_no_rows(self, db_session: Session) -> None:
-        profile = Profile(id=uuid4(), user_id=uuid4())
+        profile = _profile(db_session)
         step = SearchExecutor(provider_name="dummy")
         ctx = {
             "queries": [],

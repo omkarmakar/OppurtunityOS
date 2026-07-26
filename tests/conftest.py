@@ -7,13 +7,21 @@ from typing import Generator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.main import app
 
+
+def _set_sqlite_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
+
 # In-memory engine for service-level tests that need a DB session.
 _test_engine = create_engine("sqlite://", echo=False, connect_args={"check_same_thread": False})
+event.listen(_test_engine, "connect", _set_sqlite_pragma)
 _test_session_factory: sessionmaker[Session] = sessionmaker(bind=_test_engine)
 
 

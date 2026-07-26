@@ -9,7 +9,26 @@ import pytest
 from sqlalchemy.orm import Session
 
 from database.models.profiles import Profile
+from database.models.users import User
 
+
+
+# ── helpers ──────────────────────────────────────────────────────────
+
+
+def _user(db_session: Session) -> uuid.UUID:
+    uid = uuid4()
+    db_session.add(User(id=uid, email=f"{uid}@test.com", password_hash="test-hash"))
+    db_session.flush()
+    return uid
+
+
+def _profile(db_session: Session) -> Profile:
+    uid = _user(db_session)
+    p = Profile(id=uuid4(), user_id=uid)
+    db_session.add(p)
+    db_session.flush()
+    return p
 
 
 from services.search_pipeline import (
@@ -128,9 +147,8 @@ class TestQueryGenerator:
 class TestSearchExecutor:
     @pytest.mark.asyncio
     async def test_execute_with_dummy_provider(self, db_session) -> None:
-        from uuid import uuid4
-
-        profile = Profile(id=uuid4(), user_id=uuid4())
+        uid = _user(db_session)
+        profile = Profile(id=uuid4(), user_id=uid)
         step = SearchExecutor(provider_name="dummy", result_count=5)
         ctx = {"queries": ["python developer", "fastapi jobs"], "profile": profile, "db": db_session}
         result = await step.execute(ctx)
@@ -139,9 +157,8 @@ class TestSearchExecutor:
 
     @pytest.mark.asyncio
     async def test_execute_empty_queries(self, db_session) -> None:
-        from uuid import uuid4
-
-        profile = Profile(id=uuid4(), user_id=uuid4())
+        uid = _user(db_session)
+        profile = Profile(id=uuid4(), user_id=uid)
         step = SearchExecutor(provider_name="dummy")
         ctx = {"queries": [], "profile": profile, "db": db_session}
         result = await step.execute(ctx)
@@ -177,10 +194,10 @@ class TestOpportunityCreator:
         from services.content_extractor import ExtractedContent
         from services.search.models import SearchResult
 
-        profile = Profile(id=uuid4(), user_id=uuid4())
+        p = _profile(db_session)
         step = OpportunityCreator(db=db_session)
         ctx = {
-            "profile": profile,
+            "profile": p,
             "extracted_contents": [
                 {
                     "search_result": SearchResult(
@@ -202,9 +219,9 @@ class TestOpportunityCreator:
 
     @pytest.mark.asyncio
     async def test_execute_empty_extracted(self, db_session) -> None:
-        profile = Profile(id=uuid4(), user_id=uuid4())
+        p = _profile(db_session)
         step = OpportunityCreator(db=db_session)
-        ctx = {"profile": profile, "extracted_contents": []}
+        ctx = {"profile": p, "extracted_contents": []}
         result = await step.execute(ctx)
         assert result["opportunities"] == []
 
@@ -215,14 +232,12 @@ class TestOpportunityCreator:
         from services.content_extractor import ExtractedContent
         from services.search.models import SearchResult
 
-        profile = Profile(id=uuid4(), user_id=uuid4())
-        db_session.add(profile)
-        db_session.flush()
+        p = _profile(db_session)
 
         # First run — insert the opportunity
         step1 = OpportunityCreator(db=db_session)
         ctx1 = {
-            "profile": profile,
+            "profile": p,
             "extracted_contents": [
                 {
                     "search_result": SearchResult(
@@ -246,7 +261,7 @@ class TestOpportunityCreator:
         # Second run — same URL should skip creation but update last_seen_at
         step2 = OpportunityCreator(db=db_session)
         ctx2 = {
-            "profile": profile,
+            "profile": p,
             "extracted_contents": [
                 {
                     "search_result": SearchResult(
@@ -264,9 +279,7 @@ class TestOpportunityCreator:
         assert len(result2["opportunities"]) == 1
         assert result2["opportunities_skipped_duplicate"] == 1
         second_opp = result2["opportunities"][0]
-        # Same row — id unchanged
         assert second_opp.id == first_id
-        # last_seen_at should now be set
         assert second_opp.last_seen_at is not None
         if first_seen is not None:
             assert second_opp.last_seen_at >= first_seen
@@ -276,13 +289,11 @@ class TestOpportunityCreator:
         from services.content_extractor import ExtractedContent
         from services.search.models import SearchResult
 
-        profile = Profile(id=uuid4(), user_id=uuid4())
-        db_session.add(profile)
-        db_session.flush()
+        p = _profile(db_session)
 
         step = OpportunityCreator(db=db_session)
         ctx = {
-            "profile": profile,
+            "profile": p,
             "extracted_contents": [
                 {
                     "search_result": SearchResult(title="No URL Job", url=""),
@@ -294,7 +305,6 @@ class TestOpportunityCreator:
         assert len(result1["opportunities"]) == 1
         assert result1["opportunities_skipped_duplicate"] == 0
 
-        # Second run with same empty URL — should still create
         result2 = await step.execute(ctx)
         assert len(result2["opportunities"]) == 1
         assert result2["opportunities_skipped_duplicate"] == 0
@@ -306,16 +316,14 @@ class TestOpportunityCreator:
         from services.content_extractor import ExtractedContent
         from services.search.models import SearchResult
 
-        profile = Profile(id=uuid4(), user_id=uuid4())
-        db_session.add(profile)
-        db_session.flush()
+        p = _profile(db_session)
 
         # Insert a direct opportunity with a last_seen_at in the past
         from database.models.opportunities import Opportunity
 
         past = datetime.now(timezone.utc) - timedelta(days=30)
         opp = Opportunity(
-            id=uuid4(), user_id=profile.user_id,
+            id=uuid4(), user_id=p.user_id,
             title="Old", url="https://example.com/old",
             discovered_at=past, last_seen_at=past,
         )
@@ -324,7 +332,7 @@ class TestOpportunityCreator:
 
         step = OpportunityCreator(db=db_session)
         ctx = {
-            "profile": profile,
+            "profile": p,
             "extracted_contents": [
                 {
                     "search_result": SearchResult(
@@ -362,9 +370,10 @@ class TestRanking:
             "openrouter",
         )
 
-        profile = Profile(id=uuid4(), user_id=uuid4(), skills=["Python"])
+        uid = _user(db_session)
+        profile = Profile(id=uuid4(), user_id=uid, skills=["Python"])
         opp = Opportunity(
-            id=uuid4(), user_id=profile.user_id,
+            id=uuid4(), user_id=uid,
             title="Python Job", description="Build stuff",
             discovered_at=datetime.now(timezone.utc),
         )
@@ -379,7 +388,8 @@ class TestRanking:
 
     @pytest.mark.asyncio
     async def test_execute_no_opportunities(self, db_session) -> None:
-        profile = Profile(id=uuid4(), user_id=uuid4())
+        uid = _user(db_session)
+        profile = Profile(id=uuid4(), user_id=uid)
         step = AIRankingStep(db=db_session)
         ctx = {"profile": profile, "opportunities": []}
         result = await step.execute(ctx)
@@ -398,10 +408,8 @@ class TestNotifierStep:
         from services.opportunity_scorer.scorer import ScoredOpportunity
         from database.repositories.notification_repository import NotificationRepository
 
-        user_id = uuid4()
-        profile = Profile(id=uuid4(), user_id=user_id)
-        db_session.add(profile)
-        db_session.commit()
+        p = _profile(db_session)
+        user_id = p.user_id
 
         # Create scored opportunities with varying scores
         scored_opps = [
@@ -411,28 +419,25 @@ class TestNotifierStep:
             ),
             ScoredOpportunity(
                 opportunity_id="opp2", title="Low Score Role", url="http://example.com/2",
-                relevance_score=40,  # Below threshold
+                relevance_score=40,
             ),
         ]
 
         step = NotifierStep(db=db_session, notifier=TestNotifier())
         ctx = {
-            "profile": profile,
+            "profile": p,
             "opportunities": ["o1", "o2"],
             "scored_opportunities": scored_opps,
         }
         result = await step.execute(ctx)
 
-        # Check that notifications were created
-        assert result["notifications_created"] == 1  # Only opp1 (score 75 >= threshold 50)
+        assert result["notifications_created"] == 1
         assert len(events) == 1
         assert "opportunities found" in events[0].message
 
-        # Check database
         repo = NotificationRepository(db_session)
         notifs = repo.list_by_user_id(user_id, limit=100)
 
-        # Should have 1 opportunity notification + 1 pipeline_run summary
         assert len(notifs) == 2
         assert notifs[0].type_ in ("opportunity", "pipeline_run")
         assert notifs[1].type_ in ("opportunity", "pipeline_run")
@@ -441,12 +446,8 @@ class TestNotifierStep:
     async def test_caps_opportunity_notifications(self, db_session) -> None:
         from services.opportunity_scorer.scorer import ScoredOpportunity
 
-        user_id = uuid4()
-        profile = Profile(id=uuid4(), user_id=user_id)
-        db_session.add(profile)
-        db_session.commit()
+        p = _profile(db_session)
 
-        # Create more scored opportunities than the cap
         scored_opps = [
             ScoredOpportunity(
                 opportunity_id=f"opp{i}", title=f"Role {i}", url=f"http://example.com/{i}",
@@ -457,25 +458,20 @@ class TestNotifierStep:
 
         step = NotifierStep(db=db_session, notifier=None)
         ctx = {
-            "profile": profile,
+            "profile": p,
             "opportunities": list(range(15)),
             "scored_opportunities": scored_opps,
         }
         result = await step.execute(ctx)
 
-        # Should cap at MAX_OPPORTUNITY_NOTIFICATIONS (10)
         assert result["notifications_created"] == 10
 
     @pytest.mark.asyncio
     async def test_respects_score_threshold(self, db_session) -> None:
         from services.opportunity_scorer.scorer import ScoredOpportunity
 
-        user_id = uuid4()
-        profile = Profile(id=uuid4(), user_id=user_id)
-        db_session.add(profile)
-        db_session.commit()
+        p = _profile(db_session)
 
-        # All scores below threshold
         scored_opps = [
             ScoredOpportunity(
                 opportunity_id="opp1", title="Low Score", url="http://example.com",
@@ -485,13 +481,12 @@ class TestNotifierStep:
 
         step = NotifierStep(db=db_session, notifier=None)
         ctx = {
-            "profile": profile,
+            "profile": p,
             "opportunities": ["o1"],
             "scored_opportunities": scored_opps,
         }
         result = await step.execute(ctx)
 
-        # No opportunity notifications created (score below threshold)
         assert result["notifications_created"] == 0
 
 
@@ -504,7 +499,6 @@ class TestSearchPipeline:
     ) -> None:
         from services.ai import AIResponse
 
-        # Mock the query generator fallback
         mock_query_fallback.return_value = (
             AIResponse(
                 content='["python dev", "fastapi jobs"]',
@@ -513,7 +507,6 @@ class TestSearchPipeline:
             "openrouter",
         )
 
-        # Mock the scorer fallback
         mock_scorer_fallback.return_value = (
             AIResponse(
                 content='{"relevance_score": 85, "summary": "Good", '
@@ -525,12 +518,9 @@ class TestSearchPipeline:
             "openrouter",
         )
 
-        profile = Profile(
-            id=uuid4(), user_id=uuid4(),
-            skills=["Python", "FastAPI"],
-            preferred_locations=["Remote"],
-        )
-        db_session.add(profile)
+        p = _profile(db_session)
+        p.skills = ["Python", "FastAPI"]
+        p.preferred_locations = ["Remote"]
         db_session.flush()
 
         config = PipelineConfig(
@@ -541,7 +531,7 @@ class TestSearchPipeline:
             content_extractor_enabled=True,
         )
         pipeline = SearchPipeline(db=db_session, config=config)
-        result = await pipeline.run(profile)
+        result = await pipeline.run(p)
         assert result.success is True
 
     @pytest.mark.asyncio
@@ -559,11 +549,8 @@ class TestSearchPipeline:
             "openrouter",
         )
 
-        profile = Profile(
-            id=uuid4(), user_id=uuid4(),
-            skills=["Python"],
-        )
-        db_session.add(profile)
+        p = _profile(db_session)
+        p.skills = ["Python"]
         db_session.flush()
 
         config = PipelineConfig(
@@ -573,14 +560,14 @@ class TestSearchPipeline:
             search_result_count=2,
         )
         pipeline = SearchPipeline(db=db_session, config=config)
-        result = await pipeline.run(profile)
+        result = await pipeline.run(p)
         assert result.success is True
         assert result.opportunities_scored == 0
 
     @pytest.mark.asyncio
     async def test_pipeline_disabled_steps(self, db_session) -> None:
-        profile = Profile(id=uuid4(), user_id=uuid4(), skills=["Python"])
-        db_session.add(profile)
+        p = _profile(db_session)
+        p.skills = ["Python"]
         db_session.flush()
 
         config = PipelineConfig(
@@ -591,7 +578,7 @@ class TestSearchPipeline:
             ai_ranking_enabled=False,
         )
         pipeline = SearchPipeline(db=db_session, config=config)
-        result = await pipeline.run(profile)
+        result = await pipeline.run(p)
         assert result.success is True
         assert result.queries_generated == []
         assert result.opportunities_created == 0

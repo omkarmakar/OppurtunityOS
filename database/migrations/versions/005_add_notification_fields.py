@@ -25,6 +25,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Must drop the index before the column on SQLite (no ALTER TABLE support
+    # for dropping a column that has an associated index).
+    op.drop_index("ix_notifications_digest_id", table_name="notifications")
     op.drop_column("notifications", "digest_id")
     op.drop_column("notifications", "email_to")
     op.drop_column("notifications", "metadata_json")

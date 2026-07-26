@@ -42,6 +42,9 @@ class PipelineConfig:
     ai_ranking_provider: str = ""
     ai_ranking_model: str = ""
 
+    # Plugin integration
+    enabled_plugins: list[str] | None = None
+
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -92,6 +95,7 @@ class SearchPipeline:
                 SearchExecutor(
                     provider_name=self._config.search_provider,
                     result_count=self._config.search_result_count,
+                    enabled_plugins=self._config.enabled_plugins,
                 )
             )
 
