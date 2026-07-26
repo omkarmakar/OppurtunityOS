@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "opportunityos"
 version = "0.1.0"
 description = "A modular desktop application platform"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 license = "MIT"
 authors = [
     { name = "OpportunityOS" },
@@ -28,7 +28,7 @@ dependencies = [
     "python-multipart>=0.0.32",
     "trafilatura>=2.1.0",
     "chromadb>=0.5.0",
-    "pylatexenc>=3.10",
+    "pylatexenc>=2.10",
 ]
 
 [project.optional-dependencies]
@@ -44,7 +44,7 @@ dev = [
 ]
 
 [tool.ruff]
-target-version = "py313"
+target-version = "py314"
 line-length = 100
 
 [tool.ruff.lint]
@@ -55,7 +55,7 @@ quote-style = "double"
 
 [tool.black]
 line-length = 100
-target-version = ["py313"]
+target-version = ["py314"]
 
 [project.entry-points."opportunityos.plugins"]
 competitions = "plugins.bundled.competitions:CompetitionFinderPlugin"
