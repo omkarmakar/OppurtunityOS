@@ -19,7 +19,10 @@ class GeminiProvider(AIProvider):
         return "Gemini"
 
     @property
-    def supported_models(self) -> list[str]:
+    def default_model(self) -> str:
+        return "gemini-2.0-flash"
+
+    async def supported_models(self) -> list[str]:
         return [
             "gemini-2.0-flash",
             "gemini-2.0-flash-lite",

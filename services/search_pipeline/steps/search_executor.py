@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy.orm import Session
+
+from database.models.searches import Search
+from database.repositories.search_repository import SearchRepository
 from services.search import SearchRegistry, SearchResult
 from services.search_pipeline.steps.base import PipelineStep
 
@@ -31,22 +36,40 @@ class SearchExecutor(PipelineStep):
             ctx["search_results"] = []
             return ctx
 
+        db: Session = ctx["db"]
+        profile = ctx["profile"]
+        repo = SearchRepository(db)
+        now = datetime.now(timezone.utc)
+
         provider = self._registry.get(self._provider_name)
         all_results: list[SearchResult] = []
         seen_urls: set[str] = set()
 
         for query in queries:
+            query_result_count = 0
             try:
                 results = await provider.search(
                     query,
                     count=self._result_count,
                 )
+                query_result_count = len(results)
                 for r in results:
                     if r.url and r.url not in seen_urls:
                         seen_urls.add(r.url)
                         all_results.append(r)
             except Exception as exc:
                 logger.warning("Search query '%s' failed: %s", query, exc)
+
+            row = Search(
+                user_id=profile.user_id,
+                query=query,
+                result_count=query_result_count,
+                last_run_at=now,
+                is_saved=False,
+            )
+            repo.add(row)
+
+        db.commit()
 
         ctx["search_results"] = all_results
         return ctx

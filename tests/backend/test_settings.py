@@ -64,13 +64,18 @@ class TestSettingsEndpoint:
             assert isinstance(item["configured"], bool)
             assert "env_var" in item
 
-    def test_dummyai_always_configured(self, client: TestClient) -> None:
+    def test_groq_in_configuration_status(self, client: TestClient) -> None:
+        response = client.get("/api/v1/settings")
+        for item in response.json()["configuration_status"]:
+            if item["name"] == "groq":
+                return
+        assert False, "groq not found in configuration_status"
+
+    def test_dummyai_not_in_configuration_status(self, client: TestClient) -> None:
         response = client.get("/api/v1/settings")
         for item in response.json()["configuration_status"]:
             if item["name"] == "dummyai":
-                assert item["configured"] is True
-                return
-        assert False, "dummyai not found in configuration_status"
+                assert False, "dummyai should not appear in configuration_status"
 
     def test_ollama_always_configured(self, client: TestClient) -> None:
         response = client.get("/api/v1/settings")

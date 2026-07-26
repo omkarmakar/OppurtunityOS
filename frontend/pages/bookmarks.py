@@ -8,6 +8,7 @@ from urllib.parse import urlencode
 import httpx
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -186,6 +187,25 @@ class BookmarksPage(PageWidget):
         self._main_layout.addStretch()
 
         self._load_data()
+        self._load_profiles()
+
+    def _load_profiles(self) -> None:
+        try:
+            resp = httpx.get(
+                f"{API_BASE}/users/{get_active_user_id()}/profiles",
+                timeout=10,
+            )
+            resp.raise_for_status()
+            profiles = resp.json()
+            for p in profiles:
+                label = p.get("name", "Unnamed")
+                self._profile_combo.addItem(label, p.get("id"))
+        except Exception:
+            pass
+
+    def _on_profile_changed(self) -> None:
+        self._page = 1
+        self._load_data()
 
     def _build_header(self) -> None:
         row = QHBoxLayout()
@@ -200,6 +220,28 @@ class BookmarksPage(PageWidget):
         row.addWidget(self._result_count_label)
 
         row.addStretch()
+
+        profile_lbl = QLabel("Profile:")
+        profile_lbl.setStyleSheet(f"font-size: 12px; color: {TEXT_MUTED}; background: transparent;")
+        row.addWidget(profile_lbl)
+
+        self._profile_combo = QComboBox()
+        self._profile_combo.addItem("All Profiles", None)
+        self._profile_combo.setStyleSheet(f"""
+            QComboBox {{
+                background-color: #2a2a44; color: {TEXT_BRIGHT}; border: none;
+                border-radius: 6px; padding: 6px 12px; font-size: 12px;
+                min-width: 120px;
+            }}
+            QComboBox:hover {{ background-color: #3a3a5e; }}
+            QComboBox::drop-down {{ border: none; width: 20px; }}
+            QComboBox QAbstractItemView {{
+                background-color: #1a1a2e; color: {TEXT_BRIGHT};
+                selection-background-color: {ACCENT};
+            }}
+        """)
+        self._profile_combo.currentIndexChanged.connect(self._on_profile_changed)
+        row.addWidget(self._profile_combo)
 
         refresh_btn = QPushButton("Refresh")
         refresh_btn.setStyleSheet(f"""
@@ -285,11 +327,14 @@ class BookmarksPage(PageWidget):
         except RuntimeError:
             return
         try:
+            profile_id = self._profile_combo.currentData()
             params = {
                 "user_id": get_active_user_id(),
                 "page": self._page,
                 "page_size": self._page_size,
             }
+            if profile_id:
+                params["profile_id"] = profile_id
             resp = httpx.get(f"{API_BASE}/bookmarks?{urlencode(params)}", timeout=10)
             resp.raise_for_status()
             self._data = resp.json()

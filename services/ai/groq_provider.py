@@ -24,9 +24,10 @@ class GroqProvider(AIProvider):
         return "Groq"
 
     @property
-    def supported_models(self) -> list[str]:
-        # Free models available on Groq as of July 2026.
-        # Reference: https://console.groq.com/docs/models
+    def default_model(self) -> str:
+        return "llama-3.3-70b-versatile"
+
+    async def supported_models(self) -> list[str]:
         return [
             "llama-3.3-70b-versatile",
             "llama-3.1-8b-instant",

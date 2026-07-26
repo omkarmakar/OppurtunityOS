@@ -9,22 +9,21 @@ from fastapi.testclient import TestClient
 
 
 class TestOpportunities:
-    def _create_profile(self, client: TestClient, uid: uuid.UUID | None = None) -> uuid.UUID:
+    def _create_profile(self, client: TestClient, uid: uuid.UUID | None = None) -> tuple[uuid.UUID, uuid.UUID]:
         uid = uid or uuid.uuid4()
-        client.post("/api/v1/profiles", json={"user_id": str(uid), "display_name": "Test"})
-        return uid
+        resp = client.post("/api/v1/profiles", json={"user_id": str(uid), "display_name": "Test"})
+        return uid, resp.json()["id"]
 
     def _seed_opportunity(
-        self, client: TestClient, user_id: uuid.UUID,
+        self, client: TestClient, profile_id: uuid.UUID,
         title: str = "Python Dev",
         status: str = "new",
         score: float | None = 85.0,
         url: str = "https://example.com/job",
     ) -> dict:
-        # Use the pipeline to create an opportunity, or create directly via DB
-        # We use the profile + pipeline approach via the API
+        # Use the pipeline to create an opportunity via the API
         resp = client.post(
-            f"/api/v1/pipeline/run?user_id={user_id}&search_provider=dummy&max_queries=1&max_results=1",
+            f"/api/v1/pipeline/run?profile_id={profile_id}&search_provider=dummy&max_queries=1&max_results=1",
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -44,10 +43,9 @@ class TestOpportunities:
         assert data["items"] == []
 
     def test_list_opportunities_pagination(self, client: TestClient) -> None:
-        uid = self._create_profile(client)
-        # Run pipeline to create some opportunities
+        uid, pid = self._create_profile(client)
         for _ in range(3):
-            self._seed_opportunity(client, uid)
+            self._seed_opportunity(client, pid)
 
         resp = client.get(f"/api/v1/opportunities?user_id={uid}&page=1&page_size=2")
         assert resp.status_code == 200
@@ -58,8 +56,8 @@ class TestOpportunities:
         assert data["total"] >= 1
 
     def test_get_opportunity_by_id(self, client: TestClient) -> None:
-        uid = self._create_profile(client)
-        self._seed_opportunity(client, uid)
+        uid, pid = self._create_profile(client)
+        self._seed_opportunity(client, pid)
 
         list_resp = client.get(f"/api/v1/opportunities?user_id={uid}")
         items = list_resp.json()["items"]
@@ -78,8 +76,8 @@ class TestOpportunities:
         assert resp.status_code == 404
 
     def test_update_status(self, client: TestClient) -> None:
-        uid = self._create_profile(client)
-        self._seed_opportunity(client, uid)
+        uid, pid = self._create_profile(client)
+        self._seed_opportunity(client, pid)
 
         list_resp = client.get(f"/api/v1/opportunities?user_id={uid}")
         opp_id = list_resp.json()["items"][0]["id"]
@@ -92,8 +90,8 @@ class TestOpportunities:
         assert resp.json()["status"] == "applied"
 
     def test_update_status_invalid_value(self, client: TestClient) -> None:
-        uid = self._create_profile(client)
-        self._seed_opportunity(client, uid)
+        uid, pid = self._create_profile(client)
+        self._seed_opportunity(client, pid)
 
         list_resp = client.get(f"/api/v1/opportunities?user_id={uid}")
         opp_id = list_resp.json()["items"][0]["id"]
@@ -112,8 +110,8 @@ class TestOpportunities:
         assert resp.status_code == 404
 
     def test_filter_by_status(self, client: TestClient) -> None:
-        uid = self._create_profile(client)
-        self._seed_opportunity(client, uid)
+        uid, pid = self._create_profile(client)
+        self._seed_opportunity(client, pid)
 
         resp = client.get(f"/api/v1/opportunities?user_id={uid}&status=new")
         assert resp.status_code == 200
@@ -121,8 +119,8 @@ class TestOpportunities:
             assert item["status"] == "new"
 
     def test_filter_by_min_score(self, client: TestClient) -> None:
-        uid = self._create_profile(client)
-        self._seed_opportunity(client, uid)
+        uid, pid = self._create_profile(client)
+        self._seed_opportunity(client, pid)
 
         resp = client.get(f"/api/v1/opportunities?user_id={uid}&min_score=50")
         assert resp.status_code == 200

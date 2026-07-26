@@ -114,6 +114,12 @@ class AISettings(BaseModel):
     )
     default_provider: str = Field(default="openrouter", description="Default AI provider name")
     default_model: str = Field(default="meta-llama/llama-3.3-70b-instruct:free", description="Default model name - verified free model on OpenRouter")
+    fallback_providers: list[str] = Field(
+        default_factory=lambda: ["groq", "gemini"],
+        description="Ordered fallback providers tried after default_provider fails. "
+                    "Set via OOS_AI__FALLBACK_PROVIDERS as a comma-separated string "
+                    "(e.g. groq,gemini) or a JSON array (e.g. [\"groq\",\"gemini\"]).",
+    )
     cache_ttl: int = Field(default=300, ge=0, description="Cache TTL in seconds")
     max_retries: int = Field(default=3, ge=0, le=10, description="Max retry attempts")
 

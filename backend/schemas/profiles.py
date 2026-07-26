@@ -41,6 +41,7 @@ class ResumeParseResponse(BaseModel):
 
 class ProfileCreate(BaseModel):
     user_id: UUID = Field(description="User ID")
+    name: str = Field(default="Profile 1", max_length=100, description="User-given label for this profile")
     display_name: str | None = Field(default=None, max_length=100)
     avatar_url: str | None = Field(default=None, max_length=500)
     bio: str | None = Field(default=None)
@@ -59,6 +60,7 @@ class ProfileCreate(BaseModel):
 
 
 class ProfileUpdate(BaseModel):
+    name: str | None = Field(default=None, max_length=100, description="User-given label for this profile")
     display_name: str | None = Field(default=None, max_length=100)
     avatar_url: str | None = Field(default=None, max_length=500)
     bio: str | None = Field(default=None)
@@ -79,6 +81,7 @@ class ProfileUpdate(BaseModel):
 class ProfileResponse(BaseModel):
     id: UUID
     user_id: UUID
+    name: str
     display_name: str | None
     avatar_url: str | None
     bio: str | None

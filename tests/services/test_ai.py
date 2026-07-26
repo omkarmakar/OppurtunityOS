@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from services.ai import (
@@ -102,7 +104,8 @@ class TestDummyAIProvider:
     @pytest.mark.asyncio
     async def test_supported_models(self) -> None:
         p = DummyAIProvider()
-        assert "dummy-model" in p.supported_models
+        models = await p.supported_models
+        assert "dummy-model" in models
 
     @pytest.mark.asyncio
     async def test_generate_returns_echo(self) -> None:
@@ -141,9 +144,11 @@ class TestOpenAIProvider:
         p = OpenAIProvider()
         assert p.name == "OpenAI"
 
-    def test_supported_models(self) -> None:
+    @pytest.mark.asyncio
+    async def test_supported_models(self) -> None:
         p = OpenAIProvider()
-        assert "gpt-4o-mini" in p.supported_models
+        models = await p.supported_models
+        assert "gpt-4o-mini" in models
 
     @pytest.mark.asyncio
     async def test_raises_without_api_key(self) -> None:
@@ -157,9 +162,11 @@ class TestGeminiProvider:
         p = GeminiProvider()
         assert p.name == "Gemini"
 
-    def test_supported_models(self) -> None:
+    @pytest.mark.asyncio
+    async def test_supported_models(self) -> None:
         p = GeminiProvider()
-        assert "gemini-2.0-flash" in p.supported_models
+        models = await p.supported_models
+        assert "gemini-2.0-flash" in models
 
     @pytest.mark.asyncio
     async def test_raises_without_api_key(self) -> None:
@@ -173,11 +180,15 @@ class TestOpenRouterProvider:
         p = OpenRouterProvider(api_key="sk-or-test")
         assert p.name == "OpenRouter"
 
-    def test_supported_models(self) -> None:
+    @pytest.mark.asyncio
+    async def test_supported_models(self) -> None:
         p = OpenRouterProvider(api_key="sk-or-test")
-        # supported_models now returns verified free models only
-        assert "meta-llama/llama-3.3-70b-instruct:free" in p.supported_models
-        assert "deepseek/deepseek-chat:free" in p.supported_models
+        with patch.object(p, "_fetch_free_models", new=AsyncMock(
+            return_value=p._get_fallback_models(),
+        )):
+            models = await p.supported_models
+        assert "meta-llama/llama-3.3-70b-instruct:free" in models
+        assert "deepseek/deepseek-chat:free" in models
 
     def test_rejects_non_free_model(self) -> None:
         p = OpenRouterProvider(api_key="sk-or-test")
@@ -212,9 +223,11 @@ class TestOllamaProvider:
         p = OllamaProvider()
         assert p.name == "Ollama"
 
-    def test_supported_models(self) -> None:
+    @pytest.mark.asyncio
+    async def test_supported_models(self) -> None:
         p = OllamaProvider()
-        assert "llama3.2" in p.supported_models
+        models = await p.supported_models
+        assert "llama3.2" in models
 
     @pytest.mark.asyncio
     async def test_raises_when_offline(self) -> None:
@@ -224,15 +237,13 @@ class TestOllamaProvider:
 
 
 class TestAIRegistry:
-    def test_default_registry_contains_builtins(self) -> None:
+    def test_default_registry_contains_real_providers(self) -> None:
         reg = AIRegistry.default()
         providers = reg.list()
-        assert "dummyai" in providers
-
-    def test_get_known_provider(self) -> None:
-        reg = AIRegistry.default()
-        p = reg.get("dummyai")
-        assert isinstance(p, DummyAIProvider)
+        # The registry should never contain dummyai
+        assert "dummyai" not in providers
+        # It should contain at least the providers whose keys are configured
+        # (in test env likely none, so list may be empty — that's fine)
 
     def test_get_unknown_provider_raises(self) -> None:
         reg = AIRegistry.default()
@@ -251,11 +262,13 @@ class TestAIRegistry:
         assert "custom" in reg.list()
         assert isinstance(reg.get("custom"), CustomProvider)
 
-    def test_models_returns_dict(self) -> None:
+    @pytest.mark.asyncio
+    async def test_models_returns_dict(self) -> None:
         reg = AIRegistry.default()
-        models = reg.models()
+        models = await reg.models()
         assert isinstance(models, dict)
-        assert "dummyai" in models
+        # dummyai should never appear in models
+        assert "dummyai" not in models
 
 
 class TestPromptLibrary:

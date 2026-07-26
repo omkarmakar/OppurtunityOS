@@ -1,6 +1,7 @@
 """AI service package — multi-provider LLM interface."""
 
 from services.ai.cache import AICache
+from services.ai.dummy_provider import DummyAIProvider
 from services.ai.gemini_provider import GeminiProvider
 from services.ai.groq_provider import GroqProvider
 from services.ai.models import AIResponse, AIMessage, ModelConfig, PromptTemplate, ModelInfo
@@ -25,6 +26,7 @@ __all__ = [
     "GroqProvider",
     "OpenRouterProvider",
     "OllamaProvider",
+    "DummyAIProvider",
     "AIRegistry",
     "PromptLibrary",
     "AICache",

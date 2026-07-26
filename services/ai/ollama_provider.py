@@ -19,7 +19,10 @@ class OllamaProvider(AIProvider):
         return "Ollama"
 
     @property
-    def supported_models(self) -> list[str]:
+    def default_model(self) -> str:
+        return "llama3.2"
+
+    async def supported_models(self) -> list[str]:
         return [
             "llama3.2",
             "llama3.1",

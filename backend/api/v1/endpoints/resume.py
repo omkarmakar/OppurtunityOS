@@ -33,10 +33,10 @@ async def parse_resume(file: UploadFile) -> ResumeParseResponse:
     if file.filename is None:
         raise HTTPException(status_code=400, detail="No filename provided")
     suffix = Path(file.filename).suffix.lower()
-    if suffix not in (".pdf", ".docx"):
+    if suffix not in (".pdf", ".docx", ".tex"):
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported file type: {suffix}. Use .pdf or .docx",
+            detail=f"Unsupported file type: {suffix}. Use .pdf, .docx, or .tex",
         )
 
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)

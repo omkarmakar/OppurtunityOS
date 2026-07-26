@@ -51,8 +51,8 @@ class User(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False,
     )
 
-    profile: Mapped[Optional[Profile]] = relationship(
-        "Profile", back_populates="user", uselist=False, cascade="all, delete-orphan",
+    profiles: Mapped[List[Profile]] = relationship(
+        "Profile", back_populates="user", cascade="all, delete-orphan",
     )
     sources: Mapped[List[Source]] = relationship(
         "Source", back_populates="user", cascade="all, delete-orphan",

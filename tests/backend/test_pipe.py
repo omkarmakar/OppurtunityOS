@@ -8,25 +8,28 @@ from fastapi.testclient import TestClient
 
 
 class TestPipelineEndpoint:
-    def test_run_pipeline_requires_user_id(self, client: TestClient) -> None:
+    def _create_profile(self, client: TestClient) -> uuid.UUID:
+        uid = uuid.uuid4()
+        resp = client.post("/api/v1/profiles", json={
+            "user_id": str(uid),
+            "display_name": "Test User",
+            "skills": ["Python"],
+        })
+        return resp.json()["id"]
+
+    def test_run_pipeline_requires_profile_id(self, client: TestClient) -> None:
         resp = client.post("/api/v1/pipeline/run")
         assert resp.status_code == 422
 
     def test_run_pipeline_404_without_profile(self, client: TestClient) -> None:
-        uid = uuid.uuid4()
-        resp = client.post(f"/api/v1/pipeline/run?user_id={uid}")
+        resp = client.post(f"/api/v1/pipeline/run?profile_id={uuid.uuid4()}")
         assert resp.status_code == 404
 
     def test_run_pipeline_with_dummy(self, client: TestClient) -> None:
-        uid = uuid.uuid4()
-        client.post("/api/v1/profiles", json={
-            "user_id": str(uid),
-            "display_name": "Pipeline User",
-            "skills": ["Python"],
-        })
+        profile_id = self._create_profile(client)
 
         resp = client.post(
-            f"/api/v1/pipeline/run?user_id={uid}&search_provider=dummy&max_queries=2&max_results=3",
+            f"/api/v1/pipeline/run?profile_id={profile_id}&search_provider=dummy&max_queries=2&max_results=3",
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -36,15 +39,10 @@ class TestPipelineEndpoint:
         assert "opportunities_created" in data
 
     def test_run_pipeline_skip_ranking(self, client: TestClient) -> None:
-        uid = uuid.uuid4()
-        client.post("/api/v1/profiles", json={
-            "user_id": str(uid),
-            "display_name": "Skip Rank",
-            "skills": ["Python"],
-        })
+        profile_id = self._create_profile(client)
 
         resp = client.post(
-            f"/api/v1/pipeline/run?user_id={uid}"
+            f"/api/v1/pipeline/run?profile_id={profile_id}"
             f"&search_provider=dummy&max_queries=1&max_results=2&skip_ranking=true",
         )
         assert resp.status_code == 200
@@ -53,15 +51,10 @@ class TestPipelineEndpoint:
         assert data["opportunities_scored"] == 0
 
     def test_run_pipeline_response_structure(self, client: TestClient) -> None:
-        uid = uuid.uuid4()
-        client.post("/api/v1/profiles", json={
-            "user_id": str(uid),
-            "display_name": "Structure Test",
-            "skills": ["Python"],
-        })
+        profile_id = self._create_profile(client)
 
         resp = client.post(
-            f"/api/v1/pipeline/run?user_id={uid}&search_provider=dummy&max_queries=1&max_results=1",
+            f"/api/v1/pipeline/run?profile_id={profile_id}&search_provider=dummy&max_queries=1&max_results=1",
         )
         assert resp.status_code == 200
         data = resp.json()

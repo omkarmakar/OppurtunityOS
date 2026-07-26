@@ -128,9 +128,10 @@ async def generate(req: GenerateRequest) -> GenerateResponse:
 
 @router.get("/ai/providers", response_model=list[ProviderInfo])
 async def list_providers() -> list[ProviderInfo]:
+    all_models = await _registry.models()
     return [
         ProviderInfo(name=name, models=models)
-        for name, models in _registry.models().items()
+        for name, models in all_models.items()
     ]
 
 

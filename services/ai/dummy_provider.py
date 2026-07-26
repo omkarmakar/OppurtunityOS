@@ -12,7 +12,10 @@ class DummyAIProvider(AIProvider):
         return "DummyAI"
 
     @property
-    def supported_models(self) -> list[str]:
+    def default_model(self) -> str:
+        return "dummy-model"
+
+    async def supported_models(self) -> list[str]:
         return ["dummy-model"]
 
     async def generate(

@@ -8,7 +8,7 @@ import json
 
 from core.config import get_config
 from services.ai import AIRegistry, ModelConfig
-from services.ai.models import AIResponse
+from services.ai.fallback import generate_with_fallback
 from services.search_pipeline.steps.base import PipelineStep
 
 QUERY_GENERATOR_PROMPT = """You are an expert job search query generator for undergraduate students and freshers. Analyze the user's profile and create highly specific, targeted search queries that will return ACTUAL JOB POSTINGS (not tutorials, courses, or articles).
@@ -47,6 +47,7 @@ class QueryGenerator(PipelineStep):
         self._default_model_name = cfg.ai.default_model
         self._query_count = max(1, min(query_count, 20))
         self._registry = AIRegistry.default()
+        self._fallback_providers = cfg.ai.fallback_providers
 
     @property
     def name(self) -> str:
@@ -62,29 +63,6 @@ class QueryGenerator(PipelineStep):
 
         provider_name = self._provider_name or self._default_provider_name
         model_name = self._model_name or self._default_model_name
-        provider = None
-        original_provider_name = provider_name
-
-        # Try to get the requested provider first
-        try:
-            provider = self._registry.get(provider_name)
-        except Exception as e:
-            pass
-
-        # If that fails, try fallback providers in order: groq, then openrouter
-        if not provider:
-            fallback_order = ["groq", "openrouter"]
-            for fallback_name in fallback_order:
-                try:
-                    provider = self._registry.get(fallback_name)
-                    provider_name = fallback_name
-                    break
-                except Exception:
-                    pass
-
-        if not provider:
-            msg = f"No AI provider available. Requested: {original_provider_name}, Available: {self._registry.list()}"
-            raise ValueError(msg)
 
         config = ModelConfig(model=model_name, temperature=0.7, max_tokens=1024)
 
@@ -98,30 +76,22 @@ class QueryGenerator(PipelineStep):
             {"role": "user", "content": prompt},
         ]
 
-        try:
-            response: AIResponse = await provider.generate(messages, config)
-        except Exception as e:
-            # If primary provider fails, try groq as fallback
-            if provider_name != "groq":
-                try:
-                    provider = self._registry.get("groq")
-                    provider_name = "groq"
-                    config = ModelConfig(model=model_name, temperature=0.7, max_tokens=1024)
-                    response: AIResponse = await provider.generate(messages, config)
-                except Exception as groq_error:
-                    msg = f"AI provider '{original_provider_name}' failed with: {e}. Fallback Groq also failed: {groq_error}"
-                    raise ValueError(msg) from e
-            else:
-                msg = f"AI provider '{provider_name}' failed to generate response: {e}"
-                raise ValueError(msg) from e
+        response, used_provider = await generate_with_fallback(
+            registry=self._registry,
+            primary_provider=provider_name,
+            messages=messages,
+            config=config,
+            fallback_providers=self._fallback_providers,
+        )
 
         queries = self._parse_queries(response.content)
-        
+
         if not queries:
             msg = f"AI provider returned no parseable queries. Response: {response.content[:200]}"
             raise ValueError(msg)
 
         ctx["queries"] = queries
+        ctx["ai_provider_used"] = used_provider
         return ctx
 
     def _build_profile_context(self, profile: Any) -> str:

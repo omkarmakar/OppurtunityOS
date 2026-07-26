@@ -20,7 +20,10 @@ class OpenAIProvider(AIProvider):
         return "OpenAI"
 
     @property
-    def supported_models(self) -> list[str]:
+    def default_model(self) -> str:
+        return "gpt-4o-mini"
+
+    async def supported_models(self) -> list[str]:
         return [
             "gpt-4o",
             "gpt-4o-mini",

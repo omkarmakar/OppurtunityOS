@@ -16,9 +16,10 @@ class TestGroqProvider:
         p = GroqProvider(api_key="gsk-test")
         assert p.name == "Groq"
 
-    def test_supported_models(self) -> None:
+    @pytest.mark.asyncio
+    async def test_supported_models(self) -> None:
         p = GroqProvider(api_key="gsk-test")
-        models = p.supported_models
+        models = await p.supported_models
         assert "llama-3.3-70b-versatile" in models
         assert "llama-3.1-8b-instant" in models
         assert "mixtral-8x7b-32768" in models

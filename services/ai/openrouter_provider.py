@@ -33,6 +33,10 @@ class OpenRouterProvider(AIProvider):
     def name(self) -> str:
         return "OpenRouter"
 
+    @property
+    def default_model(self) -> str:
+        return OPENROUTER_DEFAULT_MODEL
+
     async def _fetch_free_models(self) -> list[str]:
         """Fetch live list of free models from OpenRouter's API endpoint.
         
@@ -93,14 +97,12 @@ class OpenRouterProvider(AIProvider):
             "deepseek/deepseek-r1:free",
         ]
 
-    @property
-    def supported_models(self) -> list[str]:
-        """Returns the fallback list of supported free models.
+    async def supported_models(self) -> list[str]:
+        """Fetch live list of supported free models from OpenRouter's API.
         
-        Note: For async fetching of live models, use _fetch_free_models().
-        This property is sync-only for compatibility with the AIProvider interface.
+        Falls back to a verified hardcoded list if the API is unreachable.
         """
-        return self._get_fallback_models()
+        return await self._fetch_free_models()
 
     def _resolve_model(self, config: ModelConfig) -> str:
         model = (config.model or "").strip() or OPENROUTER_DEFAULT_MODEL

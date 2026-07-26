@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -92,7 +93,19 @@ class TestCallbackNotifier:
 
 class TestQueryGenerator:
     @pytest.mark.asyncio
-    async def test_execute_with_dummy_provider(self) -> None:
+    @patch("services.search_pipeline.steps.query_generator.generate_with_fallback")
+    async def test_execute_with_mocked_fallback(self, mock_fallback) -> None:
+        from services.ai import AIResponse
+
+        mock_fallback.return_value = (
+            AIResponse(
+                content='["python developer", "fastapi jobs"]',
+                model="test-model",
+                provider="OpenRouter",
+            ),
+            "openrouter",
+        )
+
         profile = Profile(
             id=uuid4(),
             user_id=uuid4(),
@@ -114,17 +127,23 @@ class TestQueryGenerator:
 
 class TestSearchExecutor:
     @pytest.mark.asyncio
-    async def test_execute_with_dummy_provider(self) -> None:
+    async def test_execute_with_dummy_provider(self, db_session) -> None:
+        from uuid import uuid4
+
+        profile = Profile(id=uuid4(), user_id=uuid4())
         step = SearchExecutor(provider_name="dummy", result_count=5)
-        ctx = {"queries": ["python developer", "fastapi jobs"]}
+        ctx = {"queries": ["python developer", "fastapi jobs"], "profile": profile, "db": db_session}
         result = await step.execute(ctx)
         assert "search_results" in result
         assert len(result["search_results"]) > 0
 
     @pytest.mark.asyncio
-    async def test_execute_empty_queries(self) -> None:
+    async def test_execute_empty_queries(self, db_session) -> None:
+        from uuid import uuid4
+
+        profile = Profile(id=uuid4(), user_id=uuid4())
         step = SearchExecutor(provider_name="dummy")
-        ctx = {"queries": []}
+        ctx = {"queries": [], "profile": profile, "db": db_session}
         result = await step.execute(ctx)
         assert result["search_results"] == []
 
@@ -324,10 +343,24 @@ class TestOpportunityCreator:
 
 class TestRanking:
     @pytest.mark.asyncio
-    async def test_execute_with_dummy_provider(self, db_session) -> None:
+    @patch("services.opportunity_scorer.scorer.generate_with_fallback")
+    async def test_execute_with_mocked_fallback(self, mock_fallback, db_session) -> None:
         from datetime import datetime, timezone
 
         from database.models.opportunities import Opportunity
+        from services.ai import AIResponse
+
+        mock_fallback.return_value = (
+            AIResponse(
+                content='{"relevance_score": 85, "summary": "Good", '
+                        '"pros": [], "cons": [], '
+                        '"required_skills": [], "missing_skills": [], '
+                        '"application_deadline": "", "ranking_explanation": ""}',
+                model="test-model",
+                provider="OpenRouter",
+            ),
+            "openrouter",
+        )
 
         profile = Profile(id=uuid4(), user_id=uuid4(), skills=["Python"])
         opp = Opportunity(
@@ -389,16 +422,16 @@ class TestNotifierStep:
             "scored_opportunities": scored_opps,
         }
         result = await step.execute(ctx)
-        
+
         # Check that notifications were created
         assert result["notifications_created"] == 1  # Only opp1 (score 75 >= threshold 50)
         assert len(events) == 1
         assert "opportunities found" in events[0].message
-        
+
         # Check database
         repo = NotificationRepository(db_session)
         notifs = repo.list_by_user_id(user_id, limit=100)
-        
+
         # Should have 1 opportunity notification + 1 pipeline_run summary
         assert len(notifs) == 2
         assert notifs[0].type_ in ("opportunity", "pipeline_run")
@@ -429,7 +462,7 @@ class TestNotifierStep:
             "scored_opportunities": scored_opps,
         }
         result = await step.execute(ctx)
-        
+
         # Should cap at MAX_OPPORTUNITY_NOTIFICATIONS (10)
         assert result["notifications_created"] == 10
 
@@ -457,14 +490,41 @@ class TestNotifierStep:
             "scored_opportunities": scored_opps,
         }
         result = await step.execute(ctx)
-        
+
         # No opportunity notifications created (score below threshold)
         assert result["notifications_created"] == 0
 
 
 class TestSearchPipeline:
     @pytest.mark.asyncio
-    async def test_full_pipeline_with_dummy_provider(self, db_session) -> None:
+    @patch("services.search_pipeline.steps.query_generator.generate_with_fallback")
+    @patch("services.opportunity_scorer.scorer.generate_with_fallback")
+    async def test_full_pipeline_with_mocked_ai(
+        self, mock_scorer_fallback, mock_query_fallback, db_session
+    ) -> None:
+        from services.ai import AIResponse
+
+        # Mock the query generator fallback
+        mock_query_fallback.return_value = (
+            AIResponse(
+                content='["python dev", "fastapi jobs"]',
+                model="test-model", provider="OpenRouter",
+            ),
+            "openrouter",
+        )
+
+        # Mock the scorer fallback
+        mock_scorer_fallback.return_value = (
+            AIResponse(
+                content='{"relevance_score": 85, "summary": "Good", '
+                        '"pros": [], "cons": [], '
+                        '"required_skills": [], "missing_skills": [], '
+                        '"application_deadline": "", "ranking_explanation": ""}',
+                model="test-model", provider="OpenRouter",
+            ),
+            "openrouter",
+        )
+
         profile = Profile(
             id=uuid4(), user_id=uuid4(),
             skills=["Python", "FastAPI"],
@@ -485,7 +545,20 @@ class TestSearchPipeline:
         assert result.success is True
 
     @pytest.mark.asyncio
-    async def test_pipeline_without_ranking(self, db_session) -> None:
+    @patch("services.search_pipeline.steps.query_generator.generate_with_fallback")
+    async def test_pipeline_without_ranking(
+        self, mock_query_fallback, db_session
+    ) -> None:
+        from services.ai import AIResponse
+
+        mock_query_fallback.return_value = (
+            AIResponse(
+                content='["python dev"]',
+                model="test-model", provider="OpenRouter",
+            ),
+            "openrouter",
+        )
+
         profile = Profile(
             id=uuid4(), user_id=uuid4(),
             skills=["Python"],

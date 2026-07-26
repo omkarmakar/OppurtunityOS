@@ -9,6 +9,28 @@ import uuid
 from docx import Document
 from fastapi.testclient import TestClient
 
+SAMPLE_TEX = r"""\documentclass{article}
+\usepackage{geometry}
+\begin{document}
+
+\section{Skills}
+Python, Java, \textbf{Deep Learning}
+
+\section{Experience}
+Senior Developer at Acme
+2020 -- 2024
+\begin{itemize}
+    \item Built APIs with FastAPI
+\end{itemize}
+
+\section{Education}
+MIT
+2014 -- 2018
+B.S. in Computer Science
+
+\end{document}
+"""
+
 
 class TestResumeParse:
     def test_parse_docx_returns_200(self, client: TestClient) -> None:
@@ -49,6 +71,32 @@ class TestResumeParse:
         assert len(data["experience"]) >= 1
         assert len(data["projects"]) >= 1
         assert data["file_name"] == "resume.docx"
+
+    def test_parse_tex_returns_200(self, client: TestClient) -> None:
+        path = os.path.join(tempfile.gettempdir(), f"test_{uuid.uuid4().hex}.tex")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(SAMPLE_TEX)
+        with open(path, "rb") as f:
+            resp = client.post("/api/v1/resume/parse", files={"file": ("resume.tex", f, "application/octet-stream")})
+        os.unlink(path)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "Python" in data["skills"]
+        assert "Deep Learning" in data["skills"]
+
+    def test_parse_tex_returns_all_sections(self, client: TestClient) -> None:
+        path = os.path.join(tempfile.gettempdir(), f"test_{uuid.uuid4().hex}.tex")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(SAMPLE_TEX)
+        with open(path, "rb") as f:
+            resp = client.post("/api/v1/resume/parse", files={"file": ("resume.tex", f, "application/octet-stream")})
+        os.unlink(path)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["skills"]) >= 2
+        assert len(data["education"]) >= 1
+        assert len(data["experience"]) >= 1
+        assert data["file_name"] == "resume.tex"
 
     def test_parse_invalid_file_returns_400(self, client: TestClient) -> None:
         resp = client.post("/api/v1/resume/parse", files={"file": ("test.txt", b"not a resume", "text/plain")})

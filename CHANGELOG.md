@@ -6,6 +6,117 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **SearchExecutor now persists Search rows per query**: Each query run
+  through the search provider during a pipeline execution creates a new
+  `Search` row via `SearchRepository` with `query`, `user_id`,
+  `result_count` (per-query, before cross-query dedup), and `last_run_at`.
+  Failed queries still create a row with `result_count=0`. This populates
+  the dashboard's `total_searches`, `today_searches`, and "Recent Searches"
+  table. Event-log semantics — re-running the same query text creates a new
+  row each time (correctly counting toward "today" on the day it runs).
+
+- **P15 — Multi-profile support**: Users can now create up to 5 profiles
+  (e.g. "R&D Track", "AI/ML Track") for different job search tracks.
+  - `Profile` model: dropped `unique=True` on `user_id` (now one-to-many),
+    added `name: str` field (default "Profile 1") as a user-given label,
+    added non-unique index on `user_id`.
+  - `Opportunity` model: added nullable `profile_id` FK to `profiles.id`
+    for per-profile opportunity scoping going forward.
+  - `ProfileRepository`: added `list_by_user_id()`, `count_by_user_id()`,
+    and documented that `get_by_user_id()` now returns the oldest profile.
+  - New endpoints:
+    - `GET /users/{user_id}/profiles` — list all profiles for a user
+    - `POST /profiles` — create profile (enforces 5-profile cap, 409 if exceeded)
+    - `GET /profiles/id/{profile_id}` — fetch by profile id
+    - `PUT /profiles/id/{profile_id}` — update by profile id
+    - `DELETE /profiles/id/{profile_id}` — delete by profile id (blocks deleting last profile)
+  - Deprecated but retained old `/profiles/{user_id}` routes for backward compat.
+  - `POST /pipeline/run` now takes `profile_id` instead of `user_id` and
+    resolves the profile directly; 404 if not found (no more auto-create-default).
+  - `GET /opportunities` accepts optional `profile_id` filter.
+  - `opportunity_creator.py` sets `profile_id` on new opportunities.
+  - Tests: `tests/backend/test_profiles.py` covers 5-profile cap, listing,
+    profile_id CRUD, last-profile deletion guard. `tests/database/test_profile_repository.py`
+    covers new repo methods.
+
+### Fixed
+
+- **P14 — AI fallback chain: openrouter → groq → gemini → fail (no dummy/mock)**:
+  Corrected the automatic fallback chain used by query generation and opportunity
+  scoring. Previously the chain was hardcoded as `["groq", "openrouter"]` in two
+  separate places (query_generator.py and scorer.py) with duplicated, buggy logic
+  that reused the original provider's model name when switching to a fallback
+  provider — breaking the fallback call itself. The fix:
+  1. **`AIRegistry.default()`** now registers every real provider whose key/config
+     is present (Gemini, OpenAI, Ollama, OpenRouter, Groq) instead of only
+     OpenRouter and Groq. No dummy/mock provider is ever registered.
+  2. **`AISettings.fallback_providers`** added to `core/config/settings.py` with
+     default `["groq", "gemini"]`, making the full chain
+     `openrouter (default_provider) → groq → gemini → fail`. Configurable via
+     `OOS_AI__FALLBACK_PROVIDERS` (comma-separated or JSON array).
+  3. **`services/ai/fallback.py`** — new shared `generate_with_fallback()` helper
+     used by both query_generator.py and scorer.py, eliminating duplicated inline
+     fallback logic. Critical fix: when calling a fallback provider, a fresh
+     `ModelConfig` is built using that provider's own `default_model` property
+     (added to `AIProvider` ABC and implemented on every provider class) instead
+     of reusing the original model string.
+  4. **`AIProvider.default_model`** abstract property added to the ABC and
+     implemented on all five provider classes (Gemini: `gemini-2.0-flash`, Groq:
+     `llama-3.3-70b-versatile`, OpenRouter: `meta-llama/llama-3.3-70b-instruct:free`,
+     OpenAI: `gpt-4o-mini`, Ollama: `llama3.2`).
+  5. **`backend/api/v1/endpoints/settings.py`** — removed the hardcoded `"dummyai"`
+     entry from `_build_configuration_status()`; added `"groq"` to `_INTEGRATIONS`
+     and `_is_configured()`.
+  6. **Tests**: `tests/services/test_ai_fallback.py` covers primary-succeeds,
+     primary-fails-groq-succeeds (with model verification), primary-and-groq-fail-
+     gemini-succeeds, all-three-fail (with all error messages), no-openai/ollama/
+     dummy attempted, deduplication, and unregistered-provider-skipped. Existing
+     tests updated to mock `generate_with_fallback` instead of relying on the
+     removed `dummyai` provider.
+
+### Added
+
+- **LaTeX resume parsing support**: `services/resume_parser/file_reader.py` now
+  handles `.tex` files via new `read_tex()` function. Uses `pylatexenc` library
+  for robust LaTeX-to-plain-text conversion — stripping preamble commands,
+  formatting macros, comments, and environments while preserving section headers
+  and bullet content. The `read_resume_file()` dispatcher now accepts `.tex`
+  alongside `.pdf` and `.docx`. The `POST /api/v1/resume/parse` endpoint allows
+  `.tex` uploads. Dependencies: `pylatexenc>=3.10` added to `pyproject.toml`.
+   Tests: `tests/services/test_file_reader.py` covers `read_tex()` output quality
+   and command stripping; `tests/backend/test_resume.py` covers end-to-end `.tex`
+   parsing and section detection via the API.
+
+- **P17 — Multi-profile frontend (switcher + form widget)**: The Profile page
+  (`frontend/pages/profile.py`) was fully redesigned to support the multi-profile
+  backend from P15/P16. Key changes:
+  - **Profile switcher**: Horizontal scrollable card strip at page top showing up
+    to 5 profile cards (name + subtitle derived from bio/skills/location). Each
+    card has a delete (×) button with confirm-before-delete dialog. A "+ New
+    Profile" card at the end of the strip is disabled with a tooltip when the
+    user has reached 5 profiles.
+  - **Empty state**: When the user has zero profiles, the page shows two large
+    choice buttons — "Upload Resume" and "Fill Manually" — instead of an empty
+    switcher strip.
+  - **Choice dialog**: Clicking "+ New Profile" opens a clear two-button choice:
+    "Upload Resume" (opens file picker restricted to .pdf/.docx/.tex, calls
+    `POST /resume/parse`, pre-fills the form for review before saving) vs "Fill
+    Manually" (opens an empty form, user fills and saves).
+  - **ProfileForm widget** (`frontend/widgets/profile_form.py`): New reusable
+    form widget covering every `Profile` model field: name (profile label),
+    display_name, bio, education (repeatable rows), experience (repeatable rows),
+    projects (repeatable rows), skills (tag/chip input), preferred_locations,
+    salary_expectations, target_companies, keywords, linkedin_url, github_url,
+    portfolio. Used for both create (`POST /profiles`) and edit (`PUT
+    /profiles/id/{profile_id}`) modes. An `on_saved` callback notifies the
+    page to refresh the profile list after a successful save.
+  - **Profile selection**: Clicking an existing profile card loads it into the
+    form in edit mode. Active profile is highlighted with a left accent border.
+  - Tests: `tests/frontend/test_profile_page.py` covers form structure,
+    populate/collect/clear, new-profile-card limit gating (disabled at 5),
+    empty state visibility, switcher rendering with profiles, profile selection,
+    profile deletion from list, and upload-resume parse-then-fill flow.
+
 - **P13 — UI for manual digest trigger and email testing**: Added two new buttons to
   the Notifications page (`frontend/pages/notifications.py`):
   1. **"Send Digest Now"** button (green): Calls `POST /notifications/digest/trigger`
@@ -67,9 +178,15 @@ All notable changes to this project will be documented in this file.
   Fixed by:
   1. Changing the default model to `"meta-llama/llama-3.3-70b-instruct:free"`,
      a confirmed real and available free model on OpenRouter.
-  2. Replacing the hardcoded list with a live-fetch mechanism
+  2. Replacing the hardcoded static list with a live-fetch mechanism
      (`_fetch_free_models()`) that queries OpenRouter's `/models` API endpoint,
      filters for models ending in `:free`, and caches the result for 1 hour.
+     `supported_models` is now an `async` method (instead of a sync `@property`)
+     that delegates to `_fetch_free_models()`. The `AIProvider` ABC and all
+     six concrete provider classes (OpenRouter, Gemini, Groq, OpenAI, Ollama,
+     Dummy) were updated to make `supported_models` an `async def` method.
+     `AIRegistry.models()` is also `async` now, and the `GET /ai/providers`
+     endpoint awaits it.
   3. Adding a minimal verified fallback list
      (`_get_fallback_models()`) for robustness when the API is unreachable;
      this list contains only models confirmed to be real and free as of

@@ -148,6 +148,29 @@ class SearchPage(PageWidget):
         provider_row.addWidget(self._provider_combo)
         card_layout.addLayout(provider_row)
 
+        profile_row = QHBoxLayout()
+        profile_row.setSpacing(12)
+        plbl = QLabel("Profile")
+        plbl.setStyleSheet(f"font-size: 13px; font-weight: 500; color: {TEXT_BRIGHT}; background: transparent;")
+        profile_row.addWidget(plbl)
+        profile_row.addStretch()
+        self._profile_combo = QComboBox()
+        self._profile_combo.setMinimumWidth(200)
+        self._profile_combo.setStyleSheet(f"""
+            QComboBox {{
+                background-color: #2a2a44; color: {TEXT_BRIGHT}; border: none;
+                border-radius: 6px; padding: 6px 12px; font-size: 12px;
+            }}
+            QComboBox:hover {{ background-color: #3a3a5e; }}
+            QComboBox::drop-down {{ border: none; width: 20px; }}
+            QComboBox QAbstractItemView {{
+                background-color: #1a1a2e; color: {TEXT_BRIGHT};
+                selection-background-color: {ACCENT};
+            }}
+        """)
+        profile_row.addWidget(self._profile_combo)
+        card_layout.addLayout(profile_row)
+
         spin_row = QHBoxLayout()
         spin_row.setSpacing(24)
 
@@ -328,6 +351,28 @@ class SearchPage(PageWidget):
             self._provider_combo.addItem("tavily")
             self._provider_names = ["tavily"]
         self._load_latest_run()
+        self._load_profiles()
+
+    def _load_profiles(self) -> None:
+        try:
+            if not self.isWidgetType() and not self.isWindow():
+                return
+        except RuntimeError:
+            return
+        try:
+            resp = httpx.get(
+                f"{API_BASE}/users/{get_active_user_id()}/profiles",
+                timeout=10,
+            )
+            resp.raise_for_status()
+            profiles = resp.json()
+            self._profile_combo.clear()
+            for p in profiles:
+                label = p.get("name", "Unnamed")
+                self._profile_combo.addItem(label, p.get("id"))
+        except Exception:
+            self._profile_combo.clear()
+            self._profile_combo.addItem("No profiles available", None)
 
     def _load_latest_run(self) -> None:
         try:
@@ -355,8 +400,13 @@ class SearchPage(PageWidget):
         self._results_card.hide()
         self._progress.show()
 
+        profile_id = self._profile_combo.currentData()
+        if not profile_id:
+            self._on_error("No profile selected. Create a profile first.")
+            return
+
         params = {
-            "user_id": get_active_user_id(),
+            "profile_id": profile_id,
             "search_provider": self._provider_combo.currentText().lower(),
             "max_queries": self._queries_spin.value(),
             "max_results": self._results_spin.value(),

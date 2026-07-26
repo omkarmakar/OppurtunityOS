@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -48,13 +49,30 @@ class TestScoredOpportunity:
 
 class TestOpportunityScorer:
     @pytest.mark.asyncio
-    async def test_score_with_dummy_provider(self) -> None:
+    @patch("services.opportunity_scorer.scorer.generate_with_fallback")
+    async def test_score_with_mocked_fallback(self, mock_fallback) -> None:
         profile = Profile(
             id=uuid4(),
             user_id=uuid4(),
             skills=["Python", "FastAPI", "SQL"],
         )
-        scorer = OpportunityScorer(provider_name="dummyai", model_name="dummy-model")
+
+        # Mock the fallback helper to return a canned response
+        from services.ai import AIResponse
+
+        mock_fallback.return_value = (
+            AIResponse(
+                content='{"relevance_score": 85, "summary": "Good match", '
+                        '"pros": ["Remote"], "cons": [], '
+                        '"required_skills": ["Python"], "missing_skills": [], '
+                        '"application_deadline": "", "ranking_explanation": "Strong"}',
+                model="test-model",
+                provider="OpenRouter",
+            ),
+            "openrouter",
+        )
+
+        scorer = OpportunityScorer(provider_name="openrouter", model_name="test-model")
         result = await scorer.score_opportunity(
             profile=profile,
             title="Python Developer",
@@ -62,10 +80,25 @@ class TestOpportunityScorer:
         )
         assert isinstance(result, ScoredOpportunity)
         assert result.title == "Python Developer"
-        assert result.relevance_score >= 0
+        assert result.relevance_score == 85
 
     @pytest.mark.asyncio
-    async def test_score_and_save_updates_opportunity(self) -> None:
+    @patch("services.opportunity_scorer.scorer.generate_with_fallback")
+    async def test_score_and_save_updates_opportunity(self, mock_fallback) -> None:
+        from services.ai import AIResponse
+
+        mock_fallback.return_value = (
+            AIResponse(
+                content='{"relevance_score": 90, "summary": "Great", '
+                        '"pros": [], "cons": [], '
+                        '"required_skills": [], "missing_skills": [], '
+                        '"application_deadline": "", "ranking_explanation": ""}',
+                model="test-model",
+                provider="OpenRouter",
+            ),
+            "openrouter",
+        )
+
         profile = Profile(
             id=uuid4(),
             user_id=uuid4(),
@@ -79,7 +112,7 @@ class TestOpportunityScorer:
             url="https://example.com/ml-job",
             discovered_at=datetime.now(timezone.utc),
         )
-        scorer = OpportunityScorer(provider_name="dummyai", model_name="dummy-model")
+        scorer = OpportunityScorer(provider_name="openrouter", model_name="test-model")
         result = await scorer.score_and_save(profile, opp)
 
         assert result.opportunity_id == str(opp.id)
@@ -92,7 +125,25 @@ class TestOpportunityScorer:
         assert opp.ai_scored_at is not None
 
     @pytest.mark.asyncio
-    async def test_score_multiple_returns_sorted(self) -> None:
+    @patch("services.opportunity_scorer.scorer.generate_with_fallback")
+    async def test_score_multiple_returns_sorted(self, mock_fallback) -> None:
+        from services.ai import AIResponse
+
+        async def side_effect(*args, **kwargs):
+            return (
+                AIResponse(
+                    content='{"relevance_score": 75, "summary": "ok", '
+                            '"pros": [], "cons": [], '
+                            '"required_skills": [], "missing_skills": [], '
+                            '"application_deadline": "", "ranking_explanation": ""}',
+                    model="test-model",
+                    provider="OpenRouter",
+                ),
+                "openrouter",
+            )
+
+        mock_fallback.side_effect = side_effect
+
         profile = Profile(id=uuid4(), user_id=uuid4(), skills=["Python"])
         now = datetime.now(timezone.utc)
         opps = [
@@ -103,7 +154,7 @@ class TestOpportunityScorer:
             )
             for i in range(3)
         ]
-        scorer = OpportunityScorer(provider_name="dummyai", model_name="dummy-model")
+        scorer = OpportunityScorer(provider_name="openrouter", model_name="test-model")
         results = await scorer.score_multiple_and_save(profile, opps)
 
         assert len(results) == 3
@@ -111,7 +162,22 @@ class TestOpportunityScorer:
         assert scores == sorted(scores, reverse=True)
 
     @pytest.mark.asyncio
-    async def test_score_with_full_profile(self) -> None:
+    @patch("services.opportunity_scorer.scorer.generate_with_fallback")
+    async def test_score_with_full_profile(self, mock_fallback) -> None:
+        from services.ai import AIResponse
+
+        mock_fallback.return_value = (
+            AIResponse(
+                content='{"relevance_score": 92, "summary": "Excellent", '
+                        '"pros": [], "cons": [], '
+                        '"required_skills": [], "missing_skills": [], '
+                        '"application_deadline": "", "ranking_explanation": ""}',
+                model="test-model",
+                provider="OpenRouter",
+            ),
+            "openrouter",
+        )
+
         profile = Profile(
             id=uuid4(),
             user_id=uuid4(),
@@ -130,11 +196,11 @@ class TestOpportunityScorer:
                 {"degree": "BS", "field": "Computer Science", "institution": "MIT"},
             ],
         )
-        scorer = OpportunityScorer(provider_name="dummyai", model_name="dummy-model")
+        scorer = OpportunityScorer(provider_name="openrouter", model_name="test-model")
         result = await scorer.score_opportunity(
             profile=profile,
             title="Senior Backend Engineer at Google",
             description="Design and build distributed systems",
         )
         assert result.title == "Senior Backend Engineer at Google"
-        assert result.relevance_score >= 0
+        assert result.relevance_score == 92
