@@ -3,6 +3,7 @@
 from services.ai.cache import AICache
 from services.ai.dummy_provider import DummyAIProvider
 from services.ai.gemini_provider import GeminiProvider
+from services.ai.groq_provider import GroqProvider
 from services.ai.models import AIResponse, AIMessage, ModelConfig, PromptTemplate, ModelInfo
 from services.ai.ollama_provider import OllamaProvider
 from services.ai.openai_provider import OpenAIProvider
@@ -22,6 +23,7 @@ __all__ = [
     "ModelInfo",
     "OpenAIProvider",
     "GeminiProvider",
+    "GroqProvider",
     "OpenRouterProvider",
     "OllamaProvider",
     "DummyAIProvider",

@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Groq AI provider support**: Integrated Groq as a second free-tier AI provider
+  alongside OpenRouter. Groq offers no-credit-card-required free tier and
+  officially documented rate limits (30 requests/minute, 500/day). New provider:
+  - `GroqProvider` (`services/ai/groq_provider.py`): OpenAI-compatible API
+    wrapper supporting verified free models (llama-3.3-70b-versatile,
+    llama-3.1-8b-instant, mixtral-8x7b-32768 as of July 2026).
+  - Handles Groq's unsupported fields gracefully (logprobs, logit_bias,
+    top_logprobs) by filtering them before sending requests.
+  - Distinguishes rate-limit errors (429) with clear error messages from Groq's
+    response body (RPM vs RPD limits).
+  - Registered in `AIRegistry.default()` with environment variable
+    `OOS_AI__GROQ_API_KEY` and included in `/ai/providers` endpoint.
+  - Full test coverage in `tests/services/test_groq_provider.py`.
+
 ### Fixed
 
 - **BUG: OpenRouter provider using fake/unverified models**: The OpenRouter
