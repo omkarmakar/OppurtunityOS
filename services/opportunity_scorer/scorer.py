@@ -123,12 +123,30 @@ Opportunity:
 
 Score this opportunity against the user's profile. Return valid JSON only."""
 
+        provider = None
+        model_name = self._model_name
+        original_provider = self._provider_name
+
+        # Try to get the requested provider first
         try:
             provider = self._registry.get(self._provider_name)
-            model_name = self._model_name
-        except KeyError:
-            provider = self._registry.get("dummyai")
-            model_name = "dummy-model"
+        except Exception:
+            pass
+
+        # If that fails, try fallback providers
+        if not provider:
+            fallback_order = ["dummyai", "gemini", "groq", "openrouter"]
+            for fallback_name in fallback_order:
+                try:
+                    provider = self._registry.get(fallback_name)
+                    if fallback_name == "dummyai":
+                        model_name = "dummy-model"
+                    break
+                except Exception:
+                    pass
+
+        if not provider:
+            raise ValueError(f"No AI provider available. Requested: {original_provider}")
 
         config = ModelConfig(model=model_name, temperature=0.3, max_tokens=2048)
 
@@ -137,7 +155,21 @@ Score this opportunity against the user's profile. Return valid JSON only."""
             {"role": "user", "content": user_prompt},
         ]
 
-        response: AIResponse = await provider.generate(messages, config)
+        try:
+            response: AIResponse = await provider.generate(messages, config)
+        except Exception as e:
+            # If primary provider fails, fall back to dummyai
+            if provider != self._registry.get("dummyai"):
+                try:
+                    provider = self._registry.get("dummyai")
+                    model_name = "dummy-model"
+                    config = ModelConfig(model=model_name, temperature=0.3, max_tokens=2048)
+                    response: AIResponse = await provider.generate(messages, config)
+                except Exception as dummy_error:
+                    raise ValueError(f"Primary provider '{original_provider}' failed: {e}. Fallback also failed: {dummy_error}") from e
+            else:
+                raise ValueError(f"Scoring failed with provider '{original_provider}': {e}") from e
+
         result = self._parse_response(response.content)
 
         return ScoredOpportunity(
