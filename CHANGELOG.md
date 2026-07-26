@@ -6,6 +6,25 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **BUG: OpenRouter provider using fake/unverified models**: The OpenRouter
+  provider was using a non-existent default model ID (`"openrouter/free"`,
+  which has no direct equivalent on OpenRouter's API) and a hardcoded
+  `supported_models` list containing model IDs that do not exist or are not
+  available as free-tier options on the platform (e.g. `"openai/gpt-4o:free"`,
+  `"anthropic/claude-3.5-sonnet:free"`, `"google/gemini-2.0-flash:free"`).
+  Fixed by:
+  1. Changing the default model to `"meta-llama/llama-3.3-70b-instruct:free"`,
+     a confirmed real and available free model on OpenRouter.
+  2. Replacing the hardcoded list with a live-fetch mechanism
+     (`_fetch_free_models()`) that queries OpenRouter's `/models` API endpoint,
+     filters for models ending in `:free`, and caches the result for 1 hour.
+  3. Adding a minimal verified fallback list
+     (`_get_fallback_models()`) for robustness when the API is unreachable;
+     this list contains only models confirmed to be real and free as of
+     July 2026.
+  4. Updating error messages to reflect the new default and removing references
+     to the non-existent `"openrouter/free"` model.
+
 - **BUG 1 — digest email never sent**: `_digest_callback` in
   `services/background/tasks.py` was calling `digest_svc.run(user_id)` with
   no `user_email` argument, so `DailyDigestService.run()` always skipped the

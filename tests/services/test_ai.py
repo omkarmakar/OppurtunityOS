@@ -175,16 +175,31 @@ class TestOpenRouterProvider:
 
     def test_supported_models(self) -> None:
         p = OpenRouterProvider(api_key="sk-or-test")
-        assert "openrouter/free" in p.supported_models
+        # supported_models now returns verified free models only
+        assert "meta-llama/llama-3.3-70b-instruct:free" in p.supported_models
+        assert "deepseek/deepseek-chat:free" in p.supported_models
 
     def test_rejects_non_free_model(self) -> None:
         p = OpenRouterProvider(api_key="sk-or-test")
         with pytest.raises(ValueError, match="restricted to free models only"):
             p._resolve_model(ModelConfig(model="openai/gpt-4o"))
 
-    def test_accepts_free_router_when_model_missing(self) -> None:
+    def test_accepts_default_model_when_missing(self) -> None:
         p = OpenRouterProvider(api_key="sk-or-test")
-        assert p._resolve_model(ModelConfig(model="")) == "openrouter/free"
+        # Default model is now meta-llama/llama-3.3-70b-instruct:free
+        assert p._resolve_model(ModelConfig(model="")) == "meta-llama/llama-3.3-70b-instruct:free"
+
+    def test_accepts_any_free_model(self) -> None:
+        p = OpenRouterProvider(api_key="sk-or-test")
+        # Any model ending in ':free' is accepted
+        assert p._resolve_model(ModelConfig(model="deepseek/deepseek-chat:free")) == "deepseek/deepseek-chat:free"
+
+    def test_fallback_models_not_empty(self) -> None:
+        fallback = OpenRouterProvider._get_fallback_models()
+        assert len(fallback) > 0
+        # All fallback models should end in :free
+        for model in fallback:
+            assert model.endswith(":free")
 
     @pytest.mark.asyncio
     async def test_raises_without_api_key(self) -> None:
