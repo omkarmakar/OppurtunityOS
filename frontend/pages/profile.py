@@ -25,10 +25,13 @@ from frontend.theme import (
     ACCENT_HOVER,
     ACCENT_LIGHT,
     ACCENT_MUTED_BG,
+    BG_CARD,
     BG_ELEVATED,
+    BORDER_SUBTLE,
     RED,
     TEXT_BRIGHT,
     TEXT_MUTED,
+    TEXT_SECONDARY,
     card_frame_stylesheet,
 )
 from frontend.user_context import get_active_user_id
