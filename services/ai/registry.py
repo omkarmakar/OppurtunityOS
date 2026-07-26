@@ -36,7 +36,7 @@ class AIRegistry:
     async def models(self) -> dict[str, list[str]]:
         result: dict[str, list[str]] = {}
         for name, p in self._providers.items():
-            result[name] = await p.supported_models
+            result[name] = await p.supported_models()
         return result
 
     @classmethod

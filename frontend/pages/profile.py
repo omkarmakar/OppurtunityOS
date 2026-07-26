@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QDialog,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -94,7 +95,7 @@ class ProfileCard(QFrame):
         layout.addWidget(sub_label)
 
     def _derive_subtitle(self, data: dict[str, Any]) -> str:
-        bio = data.get("bio", "").strip()
+        bio = (data.get("bio") or "").strip()
         if bio:
             return bio.split("\n")[0][:60]
         skills = data.get("skills") or []
@@ -242,18 +243,21 @@ class ProfilePage(PageWidget):
         # Profile switcher strip
         self._switcher_widget = QWidget()
         self._switcher_widget.setStyleSheet("background: transparent;")
+        self._switcher_widget.setLayout(QVBoxLayout())
         self._switcher_widget.setVisible(False)
         layout.addWidget(self._switcher_widget)
 
         # Empty state (shown when 0 profiles)
         self._empty_widget = QWidget()
         self._empty_widget.setStyleSheet("background: transparent;")
+        self._empty_widget.setLayout(QVBoxLayout())
         self._empty_widget.setVisible(False)
         layout.addWidget(self._empty_widget, 1)
 
         # Form container (shown when a profile is selected or being created)
         self._form_container = QWidget()
         self._form_container.setStyleSheet("background: transparent;")
+        self._form_container.setLayout(QVBoxLayout())
         self._form_container.setVisible(False)
         layout.addWidget(self._form_container, 1)
 
@@ -264,6 +268,16 @@ class ProfilePage(PageWidget):
         # Load profiles on init
         self._fetch_profiles()
 
+    def _clear_layout(self, layout: QVBoxLayout) -> None:
+        if layout is None:
+            return
+        while layout.count():
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+            elif item.layout():
+                self._clear_layout(item.layout())
+
     def _build_switcher(self) -> None:
         # The switcher is rebuilt each time profiles change
         pass
@@ -271,11 +285,8 @@ class ProfilePage(PageWidget):
     def _rebuild_switcher(self) -> None:
         if not self._switcher_widget:
             return
-        # Clear old content
-        for child in self._switcher_widget.findChildren(QWidget, "", Qt.FindChildOption.FindChildrenRecursively):
-            child.deleteLater()
-
-        layout = QVBoxLayout(self._switcher_widget)
+        layout = self._switcher_widget.layout()
+        self._clear_layout(layout)
         layout.setContentsMargins(0, 0, 0, 8)
         layout.setSpacing(8)
 
@@ -327,10 +338,8 @@ class ProfilePage(PageWidget):
     def _build_empty_state(self) -> None:
         if not self._empty_widget:
             return
-        for child in self._empty_widget.findChildren(QWidget, "", Qt.FindChildOption.FindChildrenRecursively):
-            child.deleteLater()
-
-        layout = QVBoxLayout(self._empty_widget)
+        layout = self._empty_widget.layout()
+        self._clear_layout(layout)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.setSpacing(20)
 
@@ -389,10 +398,8 @@ class ProfilePage(PageWidget):
     def _build_form_container(self) -> None:
         if not self._form_container:
             return
-        for child in self._form_container.findChildren(QWidget, "", Qt.FindChildOption.FindChildrenRecursively):
-            child.deleteLater()
-
-        layout = QVBoxLayout(self._form_container)
+        layout = self._form_container.layout()
+        self._clear_layout(layout)
         layout.setContentsMargins(0, 0, 0, 0)
         self._profile_form = ProfileForm(on_saved=self._on_profile_saved)
         layout.addWidget(self._profile_form, 1)
@@ -460,13 +467,13 @@ class ProfilePage(PageWidget):
 
     def _on_new_profile(self) -> None:
         """Show the Upload vs Manual choice."""
-        choice = QWidget(None, Qt.WindowType.Dialog)
-        choice.setWindowTitle("New Profile")
-        choice.setMinimumWidth(480)
-        choice.setStyleSheet("""
-            QWidget { background-color: #12121f; color: #e4e4f0; }
+        dialog = QDialog(self)
+        dialog.setWindowTitle("New Profile")
+        dialog.setMinimumWidth(480)
+        dialog.setStyleSheet("""
+            QDialog { background-color: #12121f; color: #e4e4f0; }
         """)
-        layout = QVBoxLayout(choice)
+        layout = QVBoxLayout(dialog)
         layout.setSpacing(16)
         layout.setContentsMargins(24, 24, 24, 24)
 
@@ -480,6 +487,8 @@ class ProfilePage(PageWidget):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(16)
 
+        action = [None]
+
         upload_btn = QPushButton("Upload Resume")
         upload_btn.setFixedSize(200, 100)
         upload_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -490,7 +499,7 @@ class ProfilePage(PageWidget):
             }}
             QPushButton:hover {{ background-color: {ACCENT_HOVER}; }}
         """)
-        upload_btn.clicked.connect(lambda: self._on_upload_resume_dialog(choice))
+        upload_btn.clicked.connect(lambda: (action.__setitem__(0, "upload"), dialog.accept()))
         btn_row.addWidget(upload_btn)
 
         manual_btn = QPushButton("Fill Manually")
@@ -507,21 +516,19 @@ class ProfilePage(PageWidget):
                 background-color: {ACCENT_MUTED_BG};
             }}
         """)
-        manual_btn.clicked.connect(lambda: self._on_fill_manual_dialog(choice))
+        manual_btn.clicked.connect(lambda: (action.__setitem__(0, "manual"), dialog.accept()))
         btn_row.addWidget(manual_btn)
 
         layout.addLayout(btn_row)
         layout.addStretch(1)
-        choice.setLayout(layout)
-        choice.exec()
 
-    def _on_upload_resume_dialog(self, dialog: QWidget) -> None:
-        dialog.close()
-        self._on_upload_resume()
-
-    def _on_fill_manual_dialog(self, dialog: QWidget) -> None:
-        dialog.close()
-        self._on_fill_manual()
+        result = dialog.exec()
+        if result != QDialog.DialogCode.Accepted or action[0] is None:
+            return
+        if action[0] == "upload":
+            self._on_upload_resume()
+        elif action[0] == "manual":
+            self._on_fill_manual()
 
     def _on_upload_resume(self) -> None:
         path, _ = QFileDialog.getOpenFileName(

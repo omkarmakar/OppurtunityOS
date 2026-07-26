@@ -6,6 +6,7 @@ from typing import Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -70,12 +71,16 @@ class TagInput(QWidget):
         return list(self._tags)
 
     def mousePressEvent(self, event) -> None:
-        item = self._list.itemAt(event.position().toPoint())
+        list_pos = self._list.mapFrom(self, event.position().toPoint())
+        item = self._list.itemAt(list_pos)
         if item and "\u2716" in item.text():
-            idx = self._list.row(item)
-            self._list.takeItem(idx)
-            if idx < len(self._tags):
-                self._tags.pop(idx)
+            rect = self._list.visualItemRect(item)
+            if list_pos.x() >= rect.right() - 24:
+                idx = self._list.row(item)
+                self._list.takeItem(idx)
+                if idx < len(self._tags):
+                    self._tags.pop(idx)
+                return
         super().mousePressEvent(event)
 
 
@@ -281,11 +286,11 @@ class ProfileForm(QWidget):
     def _show_entry_dialog(
         self, title: str, fields: list[tuple[str, str]],
     ) -> dict[str, str] | None:
-        dialog = QWidget(None, Qt.WindowType.Dialog)
+        dialog = QDialog(self)
         dialog.setWindowTitle(title)
         dialog.setMinimumWidth(400)
         dialog.setStyleSheet("""
-            QWidget { background-color: #1a1a2e; color: #e4e4f0; font-size: 13px; }
+            QDialog { background-color: #1a1a2e; color: #e4e4f0; font-size: 13px; }
             QLineEdit {
                 padding: 6px 10px; border: 1px solid #2a2a44;
                 border-radius: 6px; background-color: #0f0f1a; color: #e4e4f0;
@@ -309,24 +314,19 @@ class ProfileForm(QWidget):
         btn_row = QHBoxLayout()
         cancel = QPushButton("Cancel")
         cancel.setStyleSheet("background-color: #252540;")
-        cancel.clicked.connect(dialog.close)
+        cancel.clicked.connect(dialog.reject)
         ok = QPushButton("OK")
         ok.setStyleSheet("background-color: #7c3aed;")
-        result: dict[str, str] | None = None
-
-        def on_ok() -> None:
-            nonlocal result
-            result = {k: w.text() for k, w in widgets.items()}
-            dialog.close()
-
-        ok.clicked.connect(on_ok)
+        ok.clicked.connect(dialog.accept)
         btn_row.addStretch(1)
         btn_row.addWidget(cancel)
         btn_row.addWidget(ok)
         layout.addLayout(btn_row)
-        dialog.setLayout(layout)
-        dialog.exec()
-        return result
+
+        result = dialog.exec()
+        if result != QDialog.DialogCode.Accepted:
+            return None
+        return {k: w.text() for k, w in widgets.items()}
 
     def _add_education(self) -> None:
         result = self._show_entry_dialog("Add Education", [

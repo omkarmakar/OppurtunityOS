@@ -59,7 +59,10 @@ class OllamaProvider(AIProvider):
                 json=body,
                 timeout=300,
             )
-            resp.raise_for_status()
+            if not resp.is_success:
+                error_body = resp.json() if resp.text else {}
+                error_msg = error_body.get("error", "") or resp.text[:200]
+                raise ValueError(f"Ollama API error ({resp.status_code}): {error_msg}")
             data = resp.json()
 
         return AIResponse(

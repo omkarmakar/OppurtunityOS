@@ -143,7 +143,13 @@ class OpenRouterProvider(AIProvider):
                 json=body,
                 timeout=120,
             )
-            resp.raise_for_status()
+            if not resp.is_success:
+                error_body = resp.json() if resp.text else {}
+                error_msg = (
+                    error_body.get("error", {}).get("message", "")
+                    or resp.text[:200]
+                )
+                raise ValueError(f"OpenRouter API error ({resp.status_code}): {error_msg}")
             data = resp.json()
 
         choice = data["choices"][0]
