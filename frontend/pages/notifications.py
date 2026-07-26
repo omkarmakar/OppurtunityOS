@@ -144,6 +144,28 @@ class NotificationsPage(PageWidget):
         self._unread_label.setStyleSheet(f"font-size: 13px; color: {TEXT_MUTED}; background: transparent;")
         row.addWidget(self._unread_label)
 
+        digest_btn = QPushButton("Send Digest Now")
+        digest_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #059669; color: white; border: none;
+                border-radius: 6px; padding: 8px 16px; font-size: 12px; font-weight: 600;
+            }}
+            QPushButton:hover {{ background-color: #047857; }}
+        """)
+        digest_btn.clicked.connect(self._trigger_digest)
+        row.addWidget(digest_btn)
+
+        test_email_btn = QPushButton("Test Email")
+        test_email_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #f59e0b; color: white; border: none;
+                border-radius: 6px; padding: 8px 16px; font-size: 12px; font-weight: 600;
+            }}
+            QPushButton:hover {{ background-color: #d97706; }}
+        """)
+        test_email_btn.clicked.connect(self._test_email)
+        row.addWidget(test_email_btn)
+
         mark_btn = QPushButton("Mark All Read")
         mark_btn.setStyleSheet(f"""
             QPushButton {{
@@ -231,6 +253,62 @@ class NotificationsPage(PageWidget):
         lbl.setStyleSheet(f"font-size: 14px; color: {TEXT_MUTED}; background: transparent;")
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._notif_layout.addWidget(lbl)
+
+    def _trigger_digest(self) -> None:
+        try:
+            if not self.isWidgetType() and not self.isWindow():
+                return
+        except RuntimeError:
+            return
+        try:
+            user_id = get_active_user_id()
+            params = urlencode({"user_id": user_id, "user_email": ""})
+            req = urllib.request.Request(
+                f"{API_BASE}/notifications/digest/trigger?{params}",
+                method="POST",
+            )
+            resp = urllib.request.urlopen(req, timeout=5)
+            result = json.loads(resp.read().decode())
+            count = result.get("notifications_count", 0)
+            email_sent = result.get("email_sent", False)
+            msg = f"Digest sent — {count} items" if count > 0 else "No new notifications to send"
+            if email_sent:
+                msg += " (emailed)"
+            self._unread_label.setText(msg)
+            self._unread_label.setStyleSheet(f"font-size: 13px; color: {'#10b981' if count == 0 else ACCENT}; background: transparent;")
+            QTimer.singleShot(3000, self._load_data)
+        except Exception as exc:
+            self._unread_label.setText(f"Error: {exc}")
+            self._unread_label.setStyleSheet(f"font-size: 13px; color: #ef4444; background: transparent;")
+
+    def _test_email(self) -> None:
+        try:
+            if not self.isWidgetType() and not self.isWindow():
+                return
+        except RuntimeError:
+            return
+        
+        # Prompt user for email address
+        from PySide6.QtWidgets import QInputDialog
+        email, ok = QInputDialog.getText(self, "Test Email", "Enter email address:", text="")
+        if not ok or not email:
+            return
+        
+        try:
+            req = urllib.request.Request(
+                f"{API_BASE}/notifications/test-email?{urlencode({'email_to': email})}",
+                method="POST",
+            )
+            resp = urllib.request.urlopen(req, timeout=5)
+            result = json.loads(resp.read().decode())
+            success = result.get("success", False)
+            msg_text = result.get("message", "")
+            self._unread_label.setText(f"Test: {msg_text}")
+            self._unread_label.setStyleSheet(f"font-size: 13px; color: {'#10b981' if success else '#ef4444'}; background: transparent;")
+            QTimer.singleShot(3000, lambda: self._unread_label.setText(""))
+        except Exception as exc:
+            self._unread_label.setText(f"Test error: {exc}")
+            self._unread_label.setStyleSheet(f"font-size: 13px; color: #ef4444; background: transparent;")
 
     def _mark_all_read(self) -> None:
         try:

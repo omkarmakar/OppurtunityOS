@@ -2,32 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Generator
 from uuid import uuid4
 
 import pytest
 from sqlalchemy.orm import Session
 
-from database.base import Base
 from database.models.profiles import Profile
-from database.session import SessionLocal, init_db
 
 
-@pytest.fixture(autouse=True)
-def _db_tables(tmp_path: Path) -> Generator:
-    init_db(data_dir=str(tmp_path))
-    yield
-    Base.metadata.drop_all(bind=SessionLocal.kw["bind"])
 
-
-@pytest.fixture
-def session() -> Generator:
-    s = SessionLocal()
-    try:
-        yield s
-    finally:
-        s.close()
 from services.search_pipeline import (
     CallbackNotifier,
     LoggingNotifier,
@@ -372,24 +355,111 @@ class TestRanking:
 
 class TestNotifierStep:
     @pytest.mark.asyncio
-    async def test_execute_sends_notification(self) -> None:
+    async def test_creates_opportunity_notifications(self, db_session) -> None:
         events: list[PipelineEvent] = []
 
         class TestNotifier(PipelineNotifier):
             def on_event(self, event: PipelineEvent) -> None:
                 events.append(event)
 
-        profile = Profile(id=uuid4(), user_id=uuid4())
-        step = NotifierStep(notifier=TestNotifier())
+        from services.opportunity_scorer.scorer import ScoredOpportunity
+        from database.repositories.notification_repository import NotificationRepository
+
+        user_id = uuid4()
+        profile = Profile(id=uuid4(), user_id=user_id)
+        db_session.add(profile)
+        db_session.commit()
+
+        # Create scored opportunities with varying scores
+        scored_opps = [
+            ScoredOpportunity(
+                opportunity_id="opp1", title="Intern Role", url="http://example.com/1",
+                relevance_score=75,
+            ),
+            ScoredOpportunity(
+                opportunity_id="opp2", title="Low Score Role", url="http://example.com/2",
+                relevance_score=40,  # Below threshold
+            ),
+        ]
+
+        step = NotifierStep(db=db_session, notifier=TestNotifier())
         ctx = {
             "profile": profile,
             "opportunities": ["o1", "o2"],
-            "scored_opportunities": ["s1"],
+            "scored_opportunities": scored_opps,
         }
         result = await step.execute(ctx)
-        assert result["notification_sent"] is True
+        
+        # Check that notifications were created
+        assert result["notifications_created"] == 1  # Only opp1 (score 75 >= threshold 50)
         assert len(events) == 1
-        assert "2 opportunities" in events[0].message
+        assert "opportunities found" in events[0].message
+        
+        # Check database
+        repo = NotificationRepository(db_session)
+        notifs = repo.list_by_user_id(user_id, limit=100)
+        
+        # Should have 1 opportunity notification + 1 pipeline_run summary
+        assert len(notifs) == 2
+        assert notifs[0].type_ in ("opportunity", "pipeline_run")
+        assert notifs[1].type_ in ("opportunity", "pipeline_run")
+
+    @pytest.mark.asyncio
+    async def test_caps_opportunity_notifications(self, db_session) -> None:
+        from services.opportunity_scorer.scorer import ScoredOpportunity
+
+        user_id = uuid4()
+        profile = Profile(id=uuid4(), user_id=user_id)
+        db_session.add(profile)
+        db_session.commit()
+
+        # Create more scored opportunities than the cap
+        scored_opps = [
+            ScoredOpportunity(
+                opportunity_id=f"opp{i}", title=f"Role {i}", url=f"http://example.com/{i}",
+                relevance_score=75,
+            )
+            for i in range(15)
+        ]
+
+        step = NotifierStep(db=db_session, notifier=None)
+        ctx = {
+            "profile": profile,
+            "opportunities": list(range(15)),
+            "scored_opportunities": scored_opps,
+        }
+        result = await step.execute(ctx)
+        
+        # Should cap at MAX_OPPORTUNITY_NOTIFICATIONS (10)
+        assert result["notifications_created"] == 10
+
+    @pytest.mark.asyncio
+    async def test_respects_score_threshold(self, db_session) -> None:
+        from services.opportunity_scorer.scorer import ScoredOpportunity
+
+        user_id = uuid4()
+        profile = Profile(id=uuid4(), user_id=user_id)
+        db_session.add(profile)
+        db_session.commit()
+
+        # All scores below threshold
+        scored_opps = [
+            ScoredOpportunity(
+                opportunity_id="opp1", title="Low Score", url="http://example.com",
+                relevance_score=30,
+            ),
+        ]
+
+        step = NotifierStep(db=db_session, notifier=None)
+        ctx = {
+            "profile": profile,
+            "opportunities": ["o1"],
+            "scored_opportunities": scored_opps,
+        }
+        result = await step.execute(ctx)
+        
+        # No opportunity notifications created (score below threshold)
+        assert result["notifications_created"] == 0
 
 
 class TestSearchPipeline:
