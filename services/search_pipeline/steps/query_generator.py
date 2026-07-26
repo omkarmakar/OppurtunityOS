@@ -62,14 +62,31 @@ class QueryGenerator(PipelineStep):
 
         provider_name = self._provider_name or self._default_provider_name
         model_name = self._model_name or self._default_model_name
+        provider = None
+        original_provider_name = provider_name
 
+        # Try to get the requested provider first
         try:
             provider = self._registry.get(provider_name)
         except Exception as e:
-            fallback_provider_name = "dummyai"
-            provider = self._registry.get(fallback_provider_name)
-            provider_name = fallback_provider_name
-            model_name = "dummy-model"
+            pass
+
+        # If that fails, try fallback providers in order: dummyai, then others
+        if not provider:
+            fallback_order = ["dummyai", "gemini", "groq", "openrouter"]
+            for fallback_name in fallback_order:
+                try:
+                    provider = self._registry.get(fallback_name)
+                    provider_name = fallback_name
+                    if fallback_name == "dummyai":
+                        model_name = "dummy-model"
+                    break
+                except Exception:
+                    pass
+
+        if not provider:
+            msg = f"No AI provider available. Requested: {original_provider_name}, Available: {self._registry.list()}"
+            raise ValueError(msg)
 
         config = ModelConfig(model=model_name, temperature=0.7, max_tokens=1024)
 
@@ -86,8 +103,20 @@ class QueryGenerator(PipelineStep):
         try:
             response: AIResponse = await provider.generate(messages, config)
         except Exception as e:
-            msg = f"AI provider '{provider_name}' failed to generate response: {e}"
-            raise ValueError(msg) from e
+            # If primary provider fails, try dummyai as last resort
+            if provider_name != "dummyai":
+                try:
+                    provider = self._registry.get("dummyai")
+                    provider_name = "dummyai"
+                    model_name = "dummy-model"
+                    config = ModelConfig(model=model_name, temperature=0.7, max_tokens=1024)
+                    response: AIResponse = await provider.generate(messages, config)
+                except Exception as dummy_error:
+                    msg = f"AI provider '{original_provider_name}' failed with: {e}. Fallback dummyai also failed: {dummy_error}"
+                    raise ValueError(msg) from e
+            else:
+                msg = f"AI provider '{provider_name}' failed to generate response: {e}"
+                raise ValueError(msg) from e
 
         queries = self._parse_queries(response.content)
         

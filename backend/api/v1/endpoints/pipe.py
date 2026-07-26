@@ -32,7 +32,7 @@ class PipelineResponse(BaseModel):
 @router.post("/pipeline/run", response_model=PipelineResponse)
 async def run_pipeline(
     user_id: UUID = Query(description="User ID to run pipeline for"),
-    search_provider: str = Query(default="dummy", description="Search provider name"),
+    search_provider: str = Query(default="tavily", description="Search provider name"),
     max_queries: int = Query(default=5, ge=1, le=20, description="Max search queries"),
     max_results: int = Query(default=10, ge=1, le=50, description="Max results per query"),
     skip_ranking: bool = Query(default=False, description="Skip AI ranking step"),
