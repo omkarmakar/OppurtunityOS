@@ -71,15 +71,13 @@ class QueryGenerator(PipelineStep):
         except Exception as e:
             pass
 
-        # If that fails, try fallback providers in order: dummyai, then others
+        # If that fails, try fallback providers in order: groq, then openrouter
         if not provider:
-            fallback_order = ["dummyai", "gemini", "groq", "openrouter"]
+            fallback_order = ["groq", "openrouter"]
             for fallback_name in fallback_order:
                 try:
                     provider = self._registry.get(fallback_name)
                     provider_name = fallback_name
-                    if fallback_name == "dummyai":
-                        model_name = "dummy-model"
                     break
                 except Exception:
                     pass
@@ -103,16 +101,15 @@ class QueryGenerator(PipelineStep):
         try:
             response: AIResponse = await provider.generate(messages, config)
         except Exception as e:
-            # If primary provider fails, try dummyai as last resort
-            if provider_name != "dummyai":
+            # If primary provider fails, try groq as fallback
+            if provider_name != "groq":
                 try:
-                    provider = self._registry.get("dummyai")
-                    provider_name = "dummyai"
-                    model_name = "dummy-model"
+                    provider = self._registry.get("groq")
+                    provider_name = "groq"
                     config = ModelConfig(model=model_name, temperature=0.7, max_tokens=1024)
                     response: AIResponse = await provider.generate(messages, config)
-                except Exception as dummy_error:
-                    msg = f"AI provider '{original_provider_name}' failed with: {e}. Fallback dummyai also failed: {dummy_error}"
+                except Exception as groq_error:
+                    msg = f"AI provider '{original_provider_name}' failed with: {e}. Fallback Groq also failed: {groq_error}"
                     raise ValueError(msg) from e
             else:
                 msg = f"AI provider '{provider_name}' failed to generate response: {e}"

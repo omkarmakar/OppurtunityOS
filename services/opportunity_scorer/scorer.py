@@ -125,6 +125,7 @@ Score this opportunity against the user's profile. Return valid JSON only."""
 
         provider = None
         model_name = self._model_name
+        provider_name = self._provider_name
         original_provider = self._provider_name
 
         # Try to get the requested provider first
@@ -133,14 +134,12 @@ Score this opportunity against the user's profile. Return valid JSON only."""
         except Exception:
             pass
 
-        # If that fails, try fallback providers
+        # If that fails, try fallback providers: groq, then openrouter
         if not provider:
-            fallback_order = ["dummyai", "gemini", "groq", "openrouter"]
+            fallback_order = ["groq", "openrouter"]
             for fallback_name in fallback_order:
                 try:
                     provider = self._registry.get(fallback_name)
-                    if fallback_name == "dummyai":
-                        model_name = "dummy-model"
                     break
                 except Exception:
                     pass
@@ -158,15 +157,15 @@ Score this opportunity against the user's profile. Return valid JSON only."""
         try:
             response: AIResponse = await provider.generate(messages, config)
         except Exception as e:
-            # If primary provider fails, fall back to dummyai
-            if provider != self._registry.get("dummyai"):
+            # If primary provider fails, fall back to groq
+            if provider_name != "groq":
                 try:
-                    provider = self._registry.get("dummyai")
-                    model_name = "dummy-model"
+                    provider = self._registry.get("groq")
+                    provider_name = "groq"
                     config = ModelConfig(model=model_name, temperature=0.3, max_tokens=2048)
                     response: AIResponse = await provider.generate(messages, config)
-                except Exception as dummy_error:
-                    raise ValueError(f"Primary provider '{original_provider}' failed: {e}. Fallback also failed: {dummy_error}") from e
+                except Exception as groq_error:
+                    raise ValueError(f"Primary provider '{original_provider}' failed: {e}. Fallback Groq also failed: {groq_error}") from e
             else:
                 raise ValueError(f"Scoring failed with provider '{original_provider}': {e}") from e
 

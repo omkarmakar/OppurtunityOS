@@ -112,8 +112,8 @@ class AISettings(BaseModel):
         default="http://localhost:11434",
         description="Ollama server base URL",
     )
-    default_provider: str = Field(default="dummyai", description="Default AI provider name")
-    default_model: str = Field(default="dummy-model", description="Default model name - uses local dummy provider for fallback")
+    default_provider: str = Field(default="openrouter", description="Default AI provider name")
+    default_model: str = Field(default="meta-llama/llama-3.3-70b-instruct:free", description="Default model name - verified free model on OpenRouter")
     cache_ttl: int = Field(default=300, ge=0, description="Cache TTL in seconds")
     max_retries: int = Field(default=3, ge=0, le=10, description="Max retry attempts")
 
@@ -166,7 +166,7 @@ class BackgroundSchedulerSettings(BaseModel):
         default=3600, ge=60, le=604800,
         description="Legacy interval kept for backward compatibility; unused when window mode is active",
     )
-    pipeline_search_provider: str = Field(default="dummy", description="Search provider for scheduled pipeline")
+    pipeline_search_provider: str = Field(default="tavily", description="Search provider for scheduled pipeline")
     pipeline_max_queries: int = Field(default=5, ge=1, le=20)
     pipeline_max_results: int = Field(default=10, ge=1, le=50)
     pipeline_retry_count: int = Field(default=3, ge=0, le=10)
