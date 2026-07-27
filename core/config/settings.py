@@ -109,6 +109,16 @@ class QueryGenerationSettings(BaseModel):
         description="Which backend to use for generating search queries from profile data. "
                     "'rules' = template-based (no AI call), 'llm' = uses the AI provider.",
     )
+    job_boards: list[str] = Field(
+        default_factory=lambda: [
+            "linkedin.com/jobs",
+            "indeed.com",
+            "naukri.com",
+            "wellfound.com",
+        ],
+        description="Job board domains for site:-scoped queries (Tier C). "
+                    "Configured via OOS_AI__QUERY_GENERATION__JOB_BOARDS as a JSON array.",
+    )
 
 
 class AISettings(BaseModel):
