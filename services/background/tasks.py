@@ -27,10 +27,11 @@ logger = logging.getLogger(__name__)
 
 def _make_pipeline_run_condition(
     user_id: uuid.UUID,
+    profile_id: uuid.UUID,
     config: AppConfig,
     session_factory: Callable[[], Session] | None = None,
 ) -> Callable[[], bool]:
-    """Closure that evaluates whether the pipeline task is due to run today."""
+    """Closure that evaluates whether this profile's pipeline task is due to run today."""
 
     def condition() -> bool:
         bs = config.background_scheduler
@@ -51,7 +52,9 @@ def _make_pipeline_run_condition(
         db = db_factory()
         try:
             repo = SchedulerStateRepository(db)
-            state = repo.get_by_user_and_task(user_id, "pipeline")
+            state = repo.get_by_user_and_task(
+                user_id, "pipeline", profile_id=profile_id,
+            )
             if state is not None and state.last_run_date == now_local.date():
                 return False
             return True
@@ -63,17 +66,18 @@ def _make_pipeline_run_condition(
 
 def _pipeline_callback(
     user_id: uuid.UUID,
+    profile_id: uuid.UUID,
     config: AppConfig,
     session_factory: Callable[[], Session] | None = None,
 ) -> dict[str, Any] | None:
-    """Run the search pipeline synchronously in a background thread."""
+    """Run the search pipeline for a single profile synchronously in a background thread."""
     db_factory = session_factory or SessionLocal
     db = db_factory()
     try:
         profile_repo = ProfileRepository(db)
-        profile = profile_repo.get_by_user_id(user_id)
+        profile = profile_repo.get(profile_id)
         if not profile:
-            logger.warning("Pipeline: no profile for user %s", user_id)
+            logger.warning("Pipeline: profile %s not found for user %s", profile_id, user_id)
             return None
 
         bs = config.background_scheduler
@@ -89,9 +93,16 @@ def _pipeline_callback(
                 tz = zoneinfo.ZoneInfo(bs.timezone)
                 now_local = datetime.now(tz)
                 state_repo = SchedulerStateRepository(db)
-                state_repo.update_last_run(user_id, "pipeline", run_date=now_local.date())
+                state_repo.update_last_run(
+                    user_id, "pipeline",
+                    run_date=now_local.date(),
+                    profile_id=profile_id,
+                )
             except Exception as exc:
-                logger.error("Failed to update scheduler_state after pipeline run: %s", exc)
+                logger.error(
+                    "Failed to update scheduler_state after pipeline run for profile %s: %s",
+                    profile_id, exc,
+                )
         db.commit()
         return {
             "success": result.success,
@@ -142,6 +153,45 @@ def _digest_callback(
         db.close()
 
 
+def _check_and_log_missed_window(
+    uid: uuid.UUID,
+    config: AppConfig,
+    session_factory: Callable[[], Session] | None = None,
+) -> None:
+    """Log a warning for each profile that missed today's pipeline window."""
+    bs = config.background_scheduler
+    db_factory = session_factory or SessionLocal
+    db = db_factory()
+    try:
+        tz = zoneinfo.ZoneInfo(bs.timezone)
+        now_local = datetime.now(tz)
+        local_hour = now_local.hour
+        if local_hour < bs.pipeline_window_end_hour:
+            return  # window hasn't closed yet — nothing missed
+
+        profile_repo = ProfileRepository(db)
+        profiles = profile_repo.list_by_user_id(uid)
+        if not profiles:
+            return
+
+        state_repo = SchedulerStateRepository(db)
+        for p in profiles:
+            state = state_repo.get_by_user_and_task(uid, "pipeline", profile_id=p.id)
+            already_ran = state is not None and state.last_run_date == now_local.date()
+            if not already_ran:
+                logger.info(
+                    "Pipeline window missed for today (%s): profile %s (%s) — "
+                    "current local time %02d:%02d (%s) is past window end (%02d:00)",
+                    now_local.date(), p.id, p.name,
+                    local_hour, now_local.minute,
+                    bs.timezone, bs.pipeline_window_end_hour,
+                )
+    except Exception as exc:
+        logger.debug("Failed checking missed pipeline window log on startup: %s", exc)
+    finally:
+        db.close()
+
+
 def create_and_start_scheduler(
     config: AppConfig,
     *,
@@ -150,6 +200,9 @@ def create_and_start_scheduler(
 ) -> BackgroundScheduler | None:
     """Create, configure, and start the background scheduler.
 
+    One ``ScheduledTask`` is registered per profile (named ``"pipeline:{profile_id}"``),
+    so each profile's daily search runs independently.
+
     Args:
         config: Application configuration.
         user_id: Override the default user ID (uses config default otherwise).
@@ -157,6 +210,10 @@ def create_and_start_scheduler(
 
     Returns:
         The started BackgroundScheduler instance, or None if disabled.
+
+    Note:
+        Profiles created after the scheduler is already running will not
+        be picked up until the next application restart.
     """
     bs_settings = config.background_scheduler
     if not bs_settings.enabled:
@@ -166,52 +223,49 @@ def create_and_start_scheduler(
     scheduler = BackgroundScheduler(polling_interval=bs_settings.polling_interval_seconds)
     uid = user_id or uuid.UUID(bs_settings.default_user_id)
 
-    # ── pipeline task ────────────────────────────────────────────────
+    # ── pipeline tasks (one per profile) ─────────────────────────────
     if bs_settings.pipeline_enabled:
-        run_cond = _make_pipeline_run_condition(uid, config, session_factory=session_factory)
-
-        # Check missed window on startup for logging
+        db_factory = session_factory or SessionLocal
+        db = db_factory()
         try:
-            tz = zoneinfo.ZoneInfo(bs_settings.timezone)
-            now_local = datetime.now(tz)
-            local_hour = now_local.hour
-            db_factory = session_factory or SessionLocal
-            db = db_factory()
-            try:
-                repo = SchedulerStateRepository(db)
-                state = repo.get_by_user_and_task(uid, "pipeline")
-                already_ran = state is not None and state.last_run_date == now_local.date()
-                if local_hour >= bs_settings.pipeline_window_end_hour and not already_ran:
-                    logger.info(
-                        "Pipeline window missed for today (%s): current local time %02d:%02d (%s) is past window end (%02d:00)",
-                        now_local.date(),
-                        local_hour,
-                        now_local.minute,
-                        bs_settings.timezone,
-                        bs_settings.pipeline_window_end_hour,
-                    )
-            finally:
-                db.close()
-        except Exception as exc:
-            logger.debug("Failed checking missed pipeline window log on startup: %s", exc)
+            profile_repo = ProfileRepository(db)
+            profiles = profile_repo.list_by_user_id(uid)
+        finally:
+            db.close()
 
-        task = ScheduledTask(
-            name="pipeline",
-            interval_seconds=60,  # no-op placeholder since run_condition takes over due-checking
-            run_condition=run_cond,
-            callback=lambda: _pipeline_callback(uid, config, session_factory=session_factory),
-            max_retries=bs_settings.pipeline_retry_count,
-            retry_delay_base=float(bs_settings.pipeline_retry_delay_base),
-        )
-        scheduler.add_task(task)
-        logger.info(
-            "Registered window-scheduled pipeline task (window=%02d:00-%02d:00 %s, retries=%d, provider=%s)",
-            bs_settings.pipeline_window_start_hour,
-            bs_settings.pipeline_window_end_hour,
-            bs_settings.timezone,
-            bs_settings.pipeline_retry_count,
-            bs_settings.pipeline_search_provider,
-        )
+        if not profiles:
+            logger.warning("No profiles found for user %s — no pipeline tasks registered", uid)
+        else:
+            for profile in profiles:
+                pid = profile.id
+                run_cond = _make_pipeline_run_condition(
+                    uid, pid, config, session_factory=session_factory,
+                )
+                task_name = f"pipeline:{pid}"
+                task = ScheduledTask(
+                    name=task_name,
+                    interval_seconds=60,
+                    run_condition=run_cond,
+                    callback=lambda uid=uid, pid=pid: _pipeline_callback(
+                        uid, pid, config, session_factory=session_factory,
+                    ),
+                    max_retries=bs_settings.pipeline_retry_count,
+                    retry_delay_base=float(bs_settings.pipeline_retry_delay_base),
+                )
+                scheduler.add_task(task)
+                logger.info(
+                    "Registered window-scheduled pipeline task for profile %s (%s) "
+                    "(window=%02d:00-%02d:00 %s, retries=%d, provider=%s)",
+                    pid, profile.name,
+                    bs_settings.pipeline_window_start_hour,
+                    bs_settings.pipeline_window_end_hour,
+                    bs_settings.timezone,
+                    bs_settings.pipeline_retry_count,
+                    bs_settings.pipeline_search_provider,
+                )
+
+        # Check missed window on startup for logging (per-profile)
+        _check_and_log_missed_window(uid, config, session_factory=session_factory)
 
     # ── digest task ──────────────────────────────────────────────────
     if bs_settings.digest_enabled:

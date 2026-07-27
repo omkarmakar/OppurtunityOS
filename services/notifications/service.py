@@ -55,6 +55,7 @@ class NotificationService:
         email_to: str | None = None,
         metadata: dict[str, Any] | None = None,
         digest_id: uuid.UUID | None = None,
+        profile_id: uuid.UUID | None = None,
     ) -> Notification:
         notif = Notification(
             user_id=user_id,
@@ -64,6 +65,7 @@ class NotificationService:
             channel=channel,
             email_to=email_to,
             digest_id=digest_id,
+            profile_id=profile_id,
             metadata_json=json.dumps(metadata) if metadata else None,
         )
         self._repo.add(notif)

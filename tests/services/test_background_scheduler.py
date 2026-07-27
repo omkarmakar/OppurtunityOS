@@ -272,19 +272,37 @@ class TestCreateAndStartScheduler:
         assert len(scheduler.tasks) == 0
         scheduler.stop()
 
-    def test_registers_pipeline_task(self) -> None:
+    def test_registers_pipeline_tasks_per_profile(self) -> None:
         config = AppConfig()
         config.background_scheduler.enabled = True
         config.background_scheduler.pipeline_enabled = True
         config.background_scheduler.digest_enabled = False
 
-        with patch("services.background.tasks.SessionLocal"):
-            scheduler = create_and_start_scheduler(config)
-            assert scheduler is not None
-            task = scheduler.get_task("pipeline")
-            assert task is not None
-            assert task.max_retries == config.background_scheduler.pipeline_retry_count
-            scheduler.stop()
+        uid = uuid.uuid4()
+        pid1, pid2 = uuid.uuid4(), uuid.uuid4()
+
+        mock_profile1 = MagicMock(id=pid1, name="Profile 1")
+        mock_profile2 = MagicMock(id=pid2, name="Profile 2")
+
+        with patch("services.background.tasks.SessionLocal") as mock_sl:
+            mock_db = MagicMock()
+            mock_sl.return_value = mock_db
+            mock_repo = MagicMock()
+            mock_repo.list_by_user_id.return_value = [mock_profile1, mock_profile2]
+            with patch("services.background.tasks.ProfileRepository", return_value=mock_repo):
+                scheduler = create_and_start_scheduler(config, user_id=uid)
+                assert scheduler is not None
+
+                task1 = scheduler.get_task(f"pipeline:{pid1}")
+                assert task1 is not None
+                assert task1.max_retries == config.background_scheduler.pipeline_retry_count
+
+                task2 = scheduler.get_task(f"pipeline:{pid2}")
+                assert task2 is not None
+                assert task2.max_retries == config.background_scheduler.pipeline_retry_count
+
+                assert scheduler.get_task("pipeline") is None
+                scheduler.stop()
 
     def test_registers_digest_task(self) -> None:
         config = AppConfig()
@@ -300,19 +318,28 @@ class TestCreateAndStartScheduler:
             assert task.max_retries == config.background_scheduler.digest_retry_count
             scheduler.stop()
 
-    def test_registers_both_tasks(self) -> None:
+    def test_registers_pipeline_and_digest(self) -> None:
         config = AppConfig()
         config.background_scheduler.enabled = True
         config.background_scheduler.pipeline_enabled = True
         config.background_scheduler.digest_enabled = True
 
-        with patch("services.background.tasks.SessionLocal"):
-            scheduler = create_and_start_scheduler(config)
-            assert scheduler is not None
-            assert scheduler.get_task("pipeline") is not None
-            assert scheduler.get_task("digest") is not None
-            assert len(scheduler.tasks) == 2
-            scheduler.stop()
+        uid = uuid.uuid4()
+        pid = uuid.uuid4()
+        mock_profile = MagicMock(id=pid, name="Profile 1")
+
+        with patch("services.background.tasks.SessionLocal") as mock_sl:
+            mock_db = MagicMock()
+            mock_sl.return_value = mock_db
+            mock_repo = MagicMock()
+            mock_repo.list_by_user_id.return_value = [mock_profile]
+            with patch("services.background.tasks.ProfileRepository", return_value=mock_repo):
+                scheduler = create_and_start_scheduler(config, user_id=uid)
+                assert scheduler is not None
+                assert scheduler.get_task(f"pipeline:{pid}") is not None
+                assert scheduler.get_task("digest") is not None
+                assert len(scheduler.tasks) == 2
+                scheduler.stop()
 
     def test_uses_custom_user_id(self) -> None:
         config = AppConfig()
@@ -323,6 +350,25 @@ class TestCreateAndStartScheduler:
             scheduler = create_and_start_scheduler(config, user_id=uid)
             assert scheduler is not None
             scheduler.stop()
+
+    def test_no_profiles_logs_warning_and_registers_no_pipeline_tasks(self) -> None:
+        config = AppConfig()
+        config.background_scheduler.enabled = True
+        config.background_scheduler.pipeline_enabled = True
+
+        uid = uuid.uuid4()
+
+        with patch("services.background.tasks.SessionLocal") as mock_sl:
+            mock_db = MagicMock()
+            mock_sl.return_value = mock_db
+            mock_repo = MagicMock()
+            mock_repo.list_by_user_id.return_value = []
+            with patch("services.background.tasks.ProfileRepository", return_value=mock_repo):
+                scheduler = create_and_start_scheduler(config, user_id=uid)
+                assert scheduler is not None
+                pipeline_tasks = [t for t in scheduler.tasks if t.name.startswith("pipeline:")]
+                assert len(pipeline_tasks) == 0
+                scheduler.stop()
 
 
 # ── Edge cases ───────────────────────────────────────────────────────
@@ -403,6 +449,7 @@ class TestWindowSchedulingCondition:
         from datetime import datetime
 
         from database.base import Base
+        from database.models import Profile
         from database.repositories import UserRepository
         from database.session import SessionLocal, init_db
         from services.background.tasks import _make_pipeline_run_condition
@@ -412,8 +459,10 @@ class TestWindowSchedulingCondition:
         db_factory = SessionLocal
 
         uid = uuid.uuid4()
+        pid = uuid.uuid4()
         db = db_factory()
         UserRepository(db).get_or_create(uid)
+        db.add(Profile(id=pid, user_id=uid, name="Test Profile"))
         db.commit()
         db.close()
 
@@ -425,7 +474,7 @@ class TestWindowSchedulingCondition:
         tz = zoneinfo.ZoneInfo("Asia/Kolkata")
         fake_now = datetime(2026, 7, 25, 8, 0, tzinfo=tz)
 
-        cond = _make_pipeline_run_condition(uid, config, session_factory=db_factory)
+        cond = _make_pipeline_run_condition(uid, pid, config, session_factory=db_factory)
 
         with patch("services.background.tasks.datetime") as mock_dt:
             mock_dt.now.return_value = fake_now
@@ -439,6 +488,7 @@ class TestWindowSchedulingCondition:
         from datetime import datetime
 
         from database.base import Base
+        from database.models import Profile
         from database.repositories import UserRepository
         from database.session import SessionLocal, init_db
         from services.background.tasks import _make_pipeline_run_condition
@@ -448,8 +498,10 @@ class TestWindowSchedulingCondition:
         db_factory = SessionLocal
 
         uid = uuid.uuid4()
+        pid = uuid.uuid4()
         db = db_factory()
         UserRepository(db).get_or_create(uid)
+        db.add(Profile(id=pid, user_id=uid, name="Test Profile"))
         db.commit()
         db.close()
 
@@ -461,7 +513,7 @@ class TestWindowSchedulingCondition:
         tz = zoneinfo.ZoneInfo("Asia/Kolkata")
         fake_now = datetime(2026, 7, 25, 14, 0, tzinfo=tz)
 
-        cond = _make_pipeline_run_condition(uid, config, session_factory=db_factory)
+        cond = _make_pipeline_run_condition(uid, pid, config, session_factory=db_factory)
 
         with patch("services.background.tasks.datetime") as mock_dt:
             mock_dt.now.return_value = fake_now
@@ -475,6 +527,7 @@ class TestWindowSchedulingCondition:
         from datetime import date, datetime
 
         from database.base import Base
+        from database.models import Profile
         from database.repositories import SchedulerStateRepository, UserRepository
         from database.session import SessionLocal, init_db
         from services.background.tasks import _make_pipeline_run_condition
@@ -484,10 +537,14 @@ class TestWindowSchedulingCondition:
         db_factory = SessionLocal
 
         uid = uuid.uuid4()
+        pid = uuid.uuid4()
         db = db_factory()
         UserRepository(db).get_or_create(uid)
+        db.add(Profile(id=pid, user_id=uid, name="Test Profile"))
         today = date(2026, 7, 25)
-        SchedulerStateRepository(db).update_last_run(uid, "pipeline", run_date=today)
+        SchedulerStateRepository(db).update_last_run(
+            uid, "pipeline", run_date=today, profile_id=pid,
+        )
         db.commit()
         db.close()
 
@@ -499,7 +556,7 @@ class TestWindowSchedulingCondition:
         tz = zoneinfo.ZoneInfo("Asia/Kolkata")
         fake_now = datetime(2026, 7, 25, 9, 30, tzinfo=tz)
 
-        cond = _make_pipeline_run_condition(uid, config, session_factory=db_factory)
+        cond = _make_pipeline_run_condition(uid, pid, config, session_factory=db_factory)
 
         with patch("services.background.tasks.datetime") as mock_dt:
             mock_dt.now.return_value = fake_now
@@ -513,6 +570,7 @@ class TestWindowSchedulingCondition:
         from datetime import date, datetime
 
         from database.base import Base
+        from database.models import Profile
         from database.repositories import SchedulerStateRepository, UserRepository
         from database.session import SessionLocal, init_db
         from services.background.tasks import _make_pipeline_run_condition
@@ -522,10 +580,14 @@ class TestWindowSchedulingCondition:
         db_factory = SessionLocal
 
         uid = uuid.uuid4()
+        pid = uuid.uuid4()
         db = db_factory()
         UserRepository(db).get_or_create(uid)
+        db.add(Profile(id=pid, user_id=uid, name="Test Profile"))
         yesterday = date(2026, 7, 24)
-        SchedulerStateRepository(db).update_last_run(uid, "pipeline", run_date=yesterday)
+        SchedulerStateRepository(db).update_last_run(
+            uid, "pipeline", run_date=yesterday, profile_id=pid,
+        )
         db.commit()
         db.close()
 
@@ -537,7 +599,7 @@ class TestWindowSchedulingCondition:
         tz = zoneinfo.ZoneInfo("Asia/Kolkata")
         fake_now = datetime(2026, 7, 25, 8, 0, tzinfo=tz)
 
-        cond = _make_pipeline_run_condition(uid, config, session_factory=db_factory)
+        cond = _make_pipeline_run_condition(uid, pid, config, session_factory=db_factory)
 
         with patch("services.background.tasks.datetime") as mock_dt:
             mock_dt.now.return_value = fake_now
@@ -551,6 +613,7 @@ class TestWindowSchedulingCondition:
         from datetime import date, datetime
 
         from database.base import Base
+        from database.models import Profile
         from database.repositories import SchedulerStateRepository, UserRepository
         from database.session import SessionLocal, init_db
         from services.background.tasks import _make_pipeline_run_condition
@@ -560,8 +623,10 @@ class TestWindowSchedulingCondition:
         db_factory = SessionLocal
 
         uid = uuid.uuid4()
+        pid = uuid.uuid4()
         db = db_factory()
         UserRepository(db).get_or_create(uid)
+        db.add(Profile(id=pid, user_id=uid, name="Test Profile"))
         db.commit()
         db.close()
 
@@ -577,19 +642,162 @@ class TestWindowSchedulingCondition:
 
         # Instance 1: runs and persists state in DB
         db1 = db_factory()
-        SchedulerStateRepository(db1).update_last_run(uid, "pipeline", run_date=date(2026, 7, 25))
+        SchedulerStateRepository(db1).update_last_run(
+            uid, "pipeline", run_date=date(2026, 7, 25), profile_id=pid,
+        )
         db1.commit()
         db1.close()
 
         # Instance 2: brand new BackgroundScheduler instance created (simulating app restart)
         sched2 = BackgroundScheduler()
-        cond2 = _make_pipeline_run_condition(uid, config, session_factory=db_factory)
-        task2 = ScheduledTask(name="pipeline", interval_seconds=60, run_condition=cond2, callback=lambda: None)
+        cond2 = _make_pipeline_run_condition(uid, pid, config, session_factory=db_factory)
+        task2 = ScheduledTask(
+            name=f"pipeline:{pid}", interval_seconds=60,
+            run_condition=cond2, callback=lambda: None,
+        )
         sched2.add_task(task2)
 
         with patch("services.background.tasks.datetime") as mock_dt:
             mock_dt.now.return_value = fake_now
             assert cond2() is False
+
+        Base.metadata.drop_all(bind=SessionLocal.kw["bind"])
+
+
+# ── Multi-Profile Scheduling ────────────────────────────────────────
+
+
+class TestMultiProfileScheduling:
+    """Tests covering per-profile pipeline task scheduling."""
+
+    def test_three_profiles_get_three_independent_tasks(self, tmp_path) -> None:
+        """A user with 3 profiles gets 3 independent scheduled tasks."""
+        import zoneinfo
+        from datetime import date, datetime
+
+        from database.base import Base
+        from database.models import Profile
+        from database.repositories import SchedulerStateRepository, UserRepository
+        from database.session import SessionLocal, init_db
+        from services.background.tasks import _make_pipeline_run_condition, _pipeline_callback
+
+        db_path = tmp_path / "test.db"
+        init_db(data_dir=str(db_path.parent))
+        db_factory = SessionLocal
+
+        uid = uuid.uuid4()
+        pids = [uuid.uuid4(), uuid.uuid4(), uuid.uuid4()]
+        db = db_factory()
+        UserRepository(db).get_or_create(uid)
+        for pid in pids:
+            db.add(Profile(id=pid, user_id=uid, name=f"Profile {pid}"))
+        db.commit()
+        db.close()
+
+        config = AppConfig()
+        config.background_scheduler.timezone = "Asia/Kolkata"
+        config.background_scheduler.pipeline_window_start_hour = 6
+        config.background_scheduler.pipeline_window_end_hour = 12
+
+        # Create 3 separate conditions — each should be True (never run)
+        conditions = [
+            _make_pipeline_run_condition(uid, pid, config, session_factory=db_factory)
+            for pid in pids
+        ]
+
+        tz = zoneinfo.ZoneInfo("Asia/Kolkata")
+        fake_now = datetime(2026, 7, 25, 8, 0, tzinfo=tz)
+        for i, cond in enumerate(conditions):
+            with patch("services.background.tasks.datetime") as mock_dt:
+                mock_dt.now.return_value = fake_now
+                assert cond() is True, f"Profile {pids[i]} condition should be True"
+
+        Base.metadata.drop_all(bind=SessionLocal.kw["bind"])
+
+    def test_one_profile_failing_does_not_affect_other_state(self, tmp_path) -> None:
+        """One profile's pipeline failing should not affect another's SchedulerState."""
+        from datetime import date
+
+        from database.base import Base
+        from database.models import Profile
+        from database.repositories import SchedulerStateRepository, UserRepository
+        from database.session import SessionLocal, init_db
+
+        db_path = tmp_path / "test.db"
+        init_db(data_dir=str(db_path.parent))
+        db_factory = SessionLocal
+
+        uid = uuid.uuid4()
+        pid_a, pid_b = uuid.uuid4(), uuid.uuid4()
+        db = db_factory()
+        UserRepository(db).get_or_create(uid)
+        db.add(Profile(id=pid_a, user_id=uid, name="Profile A"))
+        db.add(Profile(id=pid_b, user_id=uid, name="Profile B"))
+        db.commit()
+
+        # Profile A succeeded today, Profile B has not
+        SchedulerStateRepository(db).update_last_run(
+            uid, "pipeline", run_date=date(2026, 7, 25), profile_id=pid_a,
+        )
+        db.commit()
+        db.close()
+
+        db2 = db_factory()
+        repo = SchedulerStateRepository(db2)
+
+        state_a = repo.get_by_user_and_task(uid, "pipeline", profile_id=pid_a)
+        assert state_a is not None
+        assert state_a.last_run_date == date(2026, 7, 25)
+
+        state_b = repo.get_by_user_and_task(uid, "pipeline", profile_id=pid_b)
+        assert state_b is None  # never ran for profile B
+
+        Base.metadata.drop_all(bind=SessionLocal.kw["bind"])
+
+    def test_second_profile_still_runs_when_first_already_done(self, tmp_path) -> None:
+        """After profile A completes, profile B's condition is still True if it hasn't run yet."""
+        import zoneinfo
+        from datetime import date, datetime
+
+        from database.base import Base
+        from database.models import Profile
+        from database.repositories import SchedulerStateRepository, UserRepository
+        from database.session import SessionLocal, init_db
+        from services.background.tasks import _make_pipeline_run_condition
+
+        db_path = tmp_path / "test.db"
+        init_db(data_dir=str(db_path.parent))
+        db_factory = SessionLocal
+
+        uid = uuid.uuid4()
+        pid_a, pid_b = uuid.uuid4(), uuid.uuid4()
+        db = db_factory()
+        UserRepository(db).get_or_create(uid)
+        db.add(Profile(id=pid_a, user_id=uid, name="Profile A"))
+        db.add(Profile(id=pid_b, user_id=uid, name="Profile B"))
+
+        # Profile A already ran today
+        SchedulerStateRepository(db).update_last_run(
+            uid, "pipeline", run_date=date(2026, 7, 25), profile_id=pid_a,
+        )
+        db.commit()
+        db.close()
+
+        config = AppConfig()
+        config.background_scheduler.timezone = "Asia/Kolkata"
+        config.background_scheduler.pipeline_window_start_hour = 6
+        config.background_scheduler.pipeline_window_end_hour = 12
+
+        cond_a = _make_pipeline_run_condition(uid, pid_a, config, session_factory=db_factory)
+        cond_b = _make_pipeline_run_condition(uid, pid_b, config, session_factory=db_factory)
+
+        tz = zoneinfo.ZoneInfo("Asia/Kolkata")
+        fake_now = datetime(2026, 7, 25, 8, 30, tzinfo=tz)
+
+        with patch("services.background.tasks.datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            assert cond_a() is False, "Profile A already ran today"
+            assert cond_b() is True, "Profile B still needs to run"
 
         Base.metadata.drop_all(bind=SessionLocal.kw["bind"])
 

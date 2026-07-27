@@ -1,4 +1,11 @@
-"""Pipeline step — generates search queries from user profile using AI."""
+"""Pipeline step — generates search queries from user profile using AI.
+
+Factory
+-------
+``create_query_generator`` reads ``cfg.ai.query_generation.backend`` and
+returns either the rule-based or LLM-based generator instance so callers
+do not need to know which backend is active.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +17,9 @@ from core.config import get_config
 from services.ai import AIRegistry, ModelConfig
 from services.ai.fallback import generate_with_fallback
 from services.search_pipeline.steps.base import PipelineStep
+from services.search_pipeline.steps.query_generator_rules import (
+    RuleBasedQueryGenerator,
+)
 
 QUERY_GENERATOR_PROMPT = """You are an expert job search query generator for undergraduate students and freshers. Analyze the user's profile and create highly specific, targeted search queries that will return ACTUAL JOB POSTINGS (not tutorials, courses, or articles).
 
@@ -132,3 +142,29 @@ class QueryGenerator(PipelineStep):
             pass
         lines = [l.strip("- ").strip() for l in content.split("\n") if l.strip()]
         return [l for l in lines if len(l) > 5][:self._query_count]
+
+
+def create_query_generator(
+    provider: str = "",
+    model: str = "",
+    query_count: int = 5,
+    enabled_plugins: list[str] | None = None,
+) -> PipelineStep:
+    """Factory: return a QueryGenerator or RuleBasedQueryGenerator based on config.
+
+    Reads ``cfg.ai.query_generation.backend`` — if ``"rules"`` (the default)
+    returns a ``RuleBasedQueryGenerator``; if ``"llm"`` returns the original
+    ``QueryGenerator`` that calls an AI provider.
+    """
+    cfg = get_config()
+    backend = cfg.ai.query_generation.backend
+    if backend == "llm":
+        return QueryGenerator(
+            provider=provider,
+            model=model,
+            query_count=query_count,
+        )
+    return RuleBasedQueryGenerator(
+        query_count=query_count,
+        enabled_plugins=enabled_plugins,
+    )

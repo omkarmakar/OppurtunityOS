@@ -15,12 +15,15 @@ from sqlalchemy.orm import Session
 
 from backend.api.deps import get_db
 from backend.schemas.profiles import ProfileCreate, ProfileResponse, ProfileUpdate
+from core.config.settings import AppConfig
 from database.models import Profile
 from database.repositories import ProfileRepository, UserRepository
 
 router = APIRouter()
 
-MAX_PROFILES_PER_USER = 5
+
+def _get_max_slots() -> int:
+    return AppConfig().profiles.max_slots_per_user
 
 
 # ── Listing endpoint (user_id-based) ──────────────────────────────────
@@ -28,7 +31,7 @@ MAX_PROFILES_PER_USER = 5
 
 @router.get("/users/{user_id}/profiles", response_model=list[ProfileResponse])
 def list_profiles(user_id: UUID, db: Session = Depends(get_db)) -> list[ProfileResponse]:
-    """List all profiles for a user (max 5, no pagination needed)."""
+    """List all profiles for a user (max N, no pagination needed)."""
     repo = ProfileRepository(db)
     profiles = repo.list_by_user_id(user_id)
     return [ProfileResponse.model_validate(p) for p in profiles]
@@ -39,15 +42,16 @@ def list_profiles(user_id: UUID, db: Session = Depends(get_db)) -> list[ProfileR
 
 @router.post("/profiles", response_model=ProfileResponse, status_code=status.HTTP_201_CREATED)
 def create_profile(data: ProfileCreate, db: Session = Depends(get_db)) -> ProfileResponse:
-    """Create a new profile for a user (max 5 per user)."""
+    """Create a new profile for a user (max N per user)."""
     repo = ProfileRepository(db)
+    max_slots = _get_max_slots()
 
-    # Enforce the 5-profile cap
+    # Enforce the cap
     count = repo.count_by_user_id(data.user_id)
-    if count >= MAX_PROFILES_PER_USER:
+    if count >= max_slots:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Maximum of {MAX_PROFILES_PER_USER} profiles per user reached",
+            detail=f"Maximum of {max_slots} profiles per user reached",
         )
 
     # Ensure a User row exists before creating the Profile so the FK is

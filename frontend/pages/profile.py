@@ -1,4 +1,4 @@
-"""Multi-profile management page with switcher, create/edit/delete."""
+"""Profile page — per-slot management with resume upload and targeting form."""
 
 from __future__ import annotations
 
@@ -29,129 +29,96 @@ from frontend.theme import (
     BG_CARD,
     BG_ELEVATED,
     BORDER_SUBTLE,
-    RED,
     TEXT_BRIGHT,
     TEXT_MUTED,
     TEXT_SECONDARY,
     card_frame_stylesheet,
+    muted_label_stylesheet,
+    separator_stylesheet,
 )
 from frontend.user_context import get_active_user_id
-from frontend.widgets.profile_form import ProfileForm
+from frontend.widgets.profile_form import TargetingForm
 
 API_BASE = "http://127.0.0.1:8000/api/v1"
-MAX_PROFILES = 5
+MAX_SLOTS = 10
 
 
-class ProfileCard(QFrame):
-    """A clickable card in the profile switcher strip."""
+# ── Slot card in the switcher strip ─────────────────────────────────────
+
+
+class SlotCard(QFrame):
+    """A clickable card in the slot switcher strip."""
 
     def __init__(
         self,
-        profile_data: dict[str, Any],
+        slot_data: dict[str, Any],
         active: bool = False,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self._data = profile_data
-        self._profile_id = profile_data.get("id", "")
-        self.setObjectName("profileCard")
+        self._data = slot_data
+        self._slot_id = slot_data.get("id", "")
+        self.setObjectName("slotCard")
         border_left = ACCENT if active else "transparent"
-        self.setStyleSheet(card_frame_stylesheet("profileCard", border_left=border_left) + """
-            QFrame#profileCard:hover {
+        self.setStyleSheet(
+            card_frame_stylesheet("slotCard", border_left=border_left) + """
+            QFrame#slotCard:hover {
                 border: 1px solid """ + ACCENT_LIGHT + """;
             }
-        """)
+        """
+        )
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedWidth(180)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(4)
 
-        # Header row: name + delete
-        header_row = QHBoxLayout()
-        header_row.setSpacing(4)
-        name_label = QLabel(profile_data.get("name", "Untitled"))
-        name_label.setStyleSheet(f"font-size: 14px; font-weight: 700; color: {TEXT_BRIGHT}; background: transparent;")
-        header_row.addWidget(name_label, 1)
+        name_label = QLabel(slot_data.get("name", "Untitled"))
+        name_label.setStyleSheet(
+            f"font-size: 14px; font-weight: 700; color: {TEXT_BRIGHT}; background: transparent;"
+        )
+        layout.addWidget(name_label)
 
-        delete_btn = QPushButton("\u2716")
-        delete_btn.setFixedSize(22, 22)
-        delete_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent; color: {RED}; border: none;
-                font-size: 14px; font-weight: bold;
-            }}
-            QPushButton:hover {{ background: #3a1a1a; border-radius: 4px; }}
-        """)
-        delete_btn.clicked.connect(self._delete_clicked)
-        header_row.addWidget(delete_btn)
-        layout.addLayout(header_row)
-
-        # Subtitle: first line of bio, top skill, or role
-        subtitle = self._derive_subtitle(profile_data)
+        subtitle = self._derive_subtitle(slot_data)
         sub_label = QLabel(subtitle)
         sub_label.setWordWrap(True)
         sub_label.setStyleSheet(f"font-size: 11px; color: {TEXT_MUTED}; background: transparent;")
         layout.addWidget(sub_label)
 
     def _derive_subtitle(self, data: dict[str, Any]) -> str:
-        bio = (data.get("bio") or "").strip()
-        if bio:
-            return bio.split("\n")[0][:60]
         skills = data.get("skills") or []
         if skills:
-            return skills[0][:60]
+            return ", ".join(skills[:3]) + ("..." if len(skills) > 3 else "")
         locations = data.get("preferred_locations") or []
         if locations:
             return locations[0][:60]
         return "No details yet"
 
-    def _delete_clicked(self) -> None:
-        parent = self.window() if self.window() else self
-        confirm = QMessageBox.question(
-            parent, "Delete Profile",
-            f'Delete "{self._data.get("name", "this profile")}"?\nThis cannot be undone.',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if confirm == QMessageBox.StandardButton.Yes:
-            try:
-                resp = httpx.delete(f"{API_BASE}/profiles/id/{self._profile_id}", timeout=10)
-                if resp.status_code == 204:
-                    parent_widget = self.parentWidget()
-                    while parent_widget and not hasattr(parent_widget, "_on_profile_deleted"):
-                        parent_widget = parent_widget.parentWidget()
-                    if parent_widget:
-                        parent_widget._on_profile_deleted(self._profile_id)  # type: ignore[union-attr]
-                elif resp.status_code == 409:
-                    QMessageBox.warning(parent, "Cannot Delete", resp.json().get("detail", "Cannot delete last profile."))
-            except httpx.HTTPError as e:
-                QMessageBox.critical(parent, "Error", f"Failed to delete:\n{e}")
-
     def mousePressEvent(self, event) -> None:
         parent_widget = self.parentWidget()
-        while parent_widget and not hasattr(parent_widget, "_on_profile_selected"):
+        while parent_widget and not hasattr(parent_widget, "_on_slot_selected"):
             parent_widget = parent_widget.parentWidget()
         if parent_widget:
-            parent_widget._on_profile_selected(self._profile_id)  # type: ignore[union-attr]
+            parent_widget._on_slot_selected(self._slot_id)
         super().mousePressEvent(event)
 
-    def profile_id(self) -> str:
-        return self._profile_id
+    def slot_id(self) -> str:
+        return self._slot_id
 
 
-class NewProfileCard(QFrame):
-    """The '+ New Profile' card at the end of the switcher strip."""
+class NewSlotCard(QFrame):
+    """The '+ New Slot' card at the end of the switcher strip."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setObjectName("newProfileCard")
+        self.setObjectName("newSlotCard")
         self.setStyleSheet(f"""
-            QFrame#newProfileCard {{
+            QFrame#newSlotCard {{
                 background-color: {BG_ELEVATED};
                 border: 2px dashed {BORDER_SUBTLE};
                 border-radius: 10px;
             }}
-            QFrame#newProfileCard:hover {{
+            QFrame#newSlotCard:hover {{
                 border-color: {ACCENT_LIGHT};
                 background-color: {ACCENT_MUTED_BG};
             }}
@@ -160,11 +127,13 @@ class NewProfileCard(QFrame):
         self.setFixedWidth(180)
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label = QLabel("+ New Profile")
+        label = QLabel("+ New Slot")
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setStyleSheet(f"font-size: 15px; font-weight: 700; color: {ACCENT_LIGHT}; background: transparent;")
+        label.setStyleSheet(
+            f"font-size: 15px; font-weight: 700; color: {ACCENT_LIGHT}; background: transparent;"
+        )
         layout.addWidget(label)
-        hint = QLabel("Create a new profile")
+        hint = QLabel("Add a job-search track")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hint.setStyleSheet(f"font-size: 11px; color: {TEXT_MUTED}; background: transparent;")
         layout.addWidget(hint)
@@ -172,24 +141,23 @@ class NewProfileCard(QFrame):
     def set_disabled(self, disabled: bool) -> None:
         self.setEnabled(not disabled)
         if disabled:
-            self.setToolTip(f"Maximum of {MAX_PROFILES} profiles reached.")
+            self.setToolTip(f"Maximum of {MAX_SLOTS} slots reached.")
             self.setStyleSheet(f"""
-                QFrame#newProfileCard {{
+                QFrame#newSlotCard {{
                     background-color: {BG_CARD};
                     border: 2px dashed {BORDER_SUBTLE};
                     border-radius: 10px;
-                    opacity: 0.5;
                 }}
             """)
         else:
             self.setToolTip("")
             self.setStyleSheet(f"""
-                QFrame#newProfileCard {{
+                QFrame#newSlotCard {{
                     background-color: {BG_ELEVATED};
                     border: 2px dashed {BORDER_SUBTLE};
                     border-radius: 10px;
                 }}
-                QFrame#newProfileCard:hover {{
+                QFrame#newSlotCard:hover {{
                     border-color: {ACCENT_LIGHT};
                     background-color: {ACCENT_MUTED_BG};
                 }}
@@ -199,28 +167,156 @@ class NewProfileCard(QFrame):
         if not self.isEnabled():
             return
         parent_widget = self.parentWidget()
-        while parent_widget and not hasattr(parent_widget, "_on_new_profile"):
+        while parent_widget and not hasattr(parent_widget, "_on_new_slot"):
             parent_widget = parent_widget.parentWidget()
         if parent_widget:
-            parent_widget._on_new_profile()  # type: ignore[union-attr]
+            parent_widget._on_new_slot()
         super().mousePressEvent(event)
 
 
+# ── Read-only sub-cards for parsed data ─────────────────────────────────
+
+
+class SectionCard(QFrame):
+    """A read-only sub-card for a data section (education/experience/projects)."""
+
+    def __init__(self, title: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("sectionCard")
+        self.setStyleSheet(card_frame_stylesheet("sectionCard"))
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(16, 12, 16, 12)
+        self._layout.setSpacing(8)
+
+        header = QLabel(title)
+        header.setStyleSheet(muted_label_stylesheet(size=12, weight=600))
+        self._layout.addWidget(header)
+
+    def body(self) -> QVBoxLayout:
+        return self._layout
+
+    def clear_body(self) -> None:
+        while self._layout.count():
+            item = self._layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+            elif item.layout():
+                while item.layout().count():
+                    child = item.layout().takeAt(0)
+                    if child.widget():
+                        child.widget().deleteLater()
+
+
+def _chip(label: str) -> QLabel:
+    lbl = QLabel(label)
+    lbl.setStyleSheet(f"""
+        QLabel {{
+            background-color: #2a1a4e; color: {ACCENT_LIGHT};
+            border-radius: 4px; padding: 4px 10px;
+            font-size: 12px; font-weight: 500;
+        }}
+    """)
+    return lbl
+
+
+def _entry_row(items: list[str]) -> QWidget:
+    row = QWidget()
+    row.setStyleSheet("background: transparent;")
+    layout = QHBoxLayout(row)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(6)
+    for item in items:
+        layout.addWidget(QLabel(item))
+    return row
+
+
+def _render_skills(parent: QVBoxLayout, skills: list[str]) -> None:
+    if not skills:
+        return
+    card = SectionCard("Skills")
+    chip_row = QHBoxLayout()
+    chip_row.setSpacing(6)
+    chip_row.setContentsMargins(0, 0, 0, 0)
+    for skill in skills:
+        chip_row.addWidget(_chip(skill))
+    chip_row.addStretch()
+    card.body().addLayout(chip_row)
+    parent.addWidget(card)
+
+
+def _render_education(parent: QVBoxLayout, education: list[dict[str, Any]]) -> None:
+    if not education:
+        return
+    card = SectionCard("Education")
+    for entry in education:
+        text = f"{entry.get('institution', '')} — {entry.get('degree', '')}"
+        if entry.get("field"):
+            text += f" in {entry['field']}"
+        dates = f"{entry.get('start_date', '')} – {entry.get('end_date', '')}"
+        full = f"{text}  ({dates})" if dates else text
+        lbl = QLabel(full)
+        lbl.setWordWrap(True)
+        lbl.setStyleSheet(f"font-size: 13px; color: {TEXT_BRIGHT}; background: transparent;")
+        card.body().addWidget(lbl)
+    parent.addWidget(card)
+
+
+def _render_experience(parent: QVBoxLayout, experience: list[dict[str, Any]]) -> None:
+    if not experience:
+        return
+    card = SectionCard("Experience")
+    for entry in experience:
+        text = f"{entry.get('role', '')} @ {entry.get('company', '')}"
+        dates = f"{entry.get('start_date', '')} – {entry.get('end_date', '')}"
+        full = f"{text}  ({dates})" if dates else text
+        lbl = QLabel(full)
+        lbl.setWordWrap(True)
+        lbl.setStyleSheet(f"font-size: 13px; color: {TEXT_BRIGHT}; background: transparent;")
+        card.body().addWidget(lbl)
+        desc = (entry.get("description") or "").strip()
+        if desc:
+            dl = QLabel(desc[:120])
+            dl.setWordWrap(True)
+            dl.setStyleSheet(
+                f"font-size: 12px; color: {TEXT_SECONDARY}; background: transparent; padding-left: 8px;"
+            )
+            card.body().addWidget(dl)
+    parent.addWidget(card)
+
+
+def _render_projects(parent: QVBoxLayout, projects: list[dict[str, Any]]) -> None:
+    if not projects:
+        return
+    card = SectionCard("Projects")
+    for entry in projects:
+        text = entry.get("name", "")
+        tech = entry.get("technologies", "")
+        full = f"{text}  —  {tech}" if tech else text
+        lbl = QLabel(full)
+        lbl.setWordWrap(True)
+        lbl.setStyleSheet(f"font-size: 13px; color: {TEXT_BRIGHT}; background: transparent;")
+        card.body().addWidget(lbl)
+    parent.addWidget(card)
+
+
+# ── Profile page ────────────────────────────────────────────────────────
+
+
 class ProfilePage(PageWidget):
-    """Multi-profile management page."""
+    """Slot-based profile management page."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
-        self._profiles: list[dict[str, Any]] = []
-        self._active_profile_id: str | None = None
-        self._profile_form: ProfileForm | None = None
+        self._slots: list[dict[str, Any]] = []
+        self._active_slot_id: str | None = None
+        self._targeting_form: TargetingForm | None = None
         self._switcher_widget: QWidget | None = None
         self._empty_widget: QWidget | None = None
-        self._form_container: QWidget | None = None
-        self._switcher_scroll: QScrollArea | None = None
+        self._content_area: QWidget | None = None
+        self._resume_section: QWidget | None = None
+        self._parsed_section: QVBoxLayout | None = None
         super().__init__("Profile", parent)
 
     def _setup_ui(self) -> None:
-        # Override PageWidget._setup_ui with our own layout
         layout = QVBoxLayout(self)
         layout.setContentsMargins(32, 32, 32, 32)
         layout.setSpacing(0)
@@ -234,41 +330,43 @@ class ProfilePage(PageWidget):
         """)
         layout.addWidget(header)
 
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setStyleSheet("QFrame { color: #2a2a44; max-height: 1px; }")
-        layout.addWidget(separator)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet("QFrame { color: #2a2a44; max-height: 1px; }")
+        layout.addWidget(sep)
         layout.addSpacing(16)
 
-        # Profile switcher strip
         self._switcher_widget = QWidget()
         self._switcher_widget.setStyleSheet("background: transparent;")
         self._switcher_widget.setLayout(QVBoxLayout())
         self._switcher_widget.setVisible(False)
         layout.addWidget(self._switcher_widget)
 
-        # Empty state (shown when 0 profiles)
         self._empty_widget = QWidget()
         self._empty_widget.setStyleSheet("background: transparent;")
         self._empty_widget.setLayout(QVBoxLayout())
         self._empty_widget.setVisible(False)
         layout.addWidget(self._empty_widget, 1)
 
-        # Form container (shown when a profile is selected or being created)
-        self._form_container = QWidget()
-        self._form_container.setStyleSheet("background: transparent;")
-        self._form_container.setLayout(QVBoxLayout())
-        self._form_container.setVisible(False)
-        layout.addWidget(self._form_container, 1)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
 
-        self._build_switcher()
+        self._content_area = QWidget()
+        self._content_area.setStyleSheet("background: transparent;")
+        self._content_layout = QVBoxLayout(self._content_area)
+        self._content_layout.setContentsMargins(0, 0, 0, 0)
+        self._content_layout.setSpacing(20)
+        scroll.setWidget(self._content_area)
+        self._content_area.setVisible(False)
+        layout.addWidget(scroll, 1)
+
         self._build_empty_state()
-        self._build_form_container()
+        self._build_switcher()
 
-        # Load profiles on init
-        self._fetch_profiles()
+        self._fetch_slots()
 
-    def _clear_layout(self, layout: QVBoxLayout) -> None:
+    def _clear_layout(self, layout: QVBoxLayout | None) -> None:
         if layout is None:
             return
         while layout.count():
@@ -278,8 +376,9 @@ class ProfilePage(PageWidget):
             elif item.layout():
                 self._clear_layout(item.layout())
 
+    # ── switcher ─────────────────────────────────────────────────────────
+
     def _build_switcher(self) -> None:
-        # The switcher is rebuilt each time profiles change
         pass
 
     def _rebuild_switcher(self) -> None:
@@ -290,13 +389,15 @@ class ProfilePage(PageWidget):
         layout.setContentsMargins(0, 0, 0, 8)
         layout.setSpacing(8)
 
-        label = QLabel("Your Profiles")
-        label.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {TEXT_SECONDARY}; background: transparent;")
+        label = QLabel("Job-Search Slots")
+        label.setStyleSheet(
+            f"font-size: 13px; font-weight: 600; color: {TEXT_SECONDARY}; background: transparent;"
+        )
         layout.addWidget(label)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setFixedHeight(130)
+        scroll.setFixedHeight(110)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
@@ -307,33 +408,20 @@ class ProfilePage(PageWidget):
         row_layout.setContentsMargins(0, 0, 0, 0)
         row_layout.setSpacing(10)
 
-        for profile in self._profiles:
-            card = ProfileCard(
-                profile,
-                active=profile.get("id") == self._active_profile_id,
-            )
+        for slot in self._slots:
+            card = SlotCard(slot, active=slot.get("id") == self._active_slot_id)
             row_layout.addWidget(card)
 
-        self._new_profile_card = NewProfileCard()
-        self._new_profile_card.set_disabled(len(self._profiles) >= MAX_PROFILES)
-        row_layout.addWidget(self._new_profile_card)
+        self._new_slot_card = NewSlotCard()
+        self._new_slot_card.set_disabled(len(self._slots) >= MAX_SLOTS)
+        row_layout.addWidget(self._new_slot_card)
 
         row_layout.addStretch(1)
         scroll.setWidget(inner)
         layout.addWidget(scroll)
-
         self._switcher_widget.setVisible(True)
 
-    def _on_new_profile_card_click(self, event) -> None:
-        if len(self._profiles) >= MAX_PROFILES:
-            QMessageBox.information(
-                self, "Limit Reached",
-                f"You can have at most {MAX_PROFILES} profiles.",
-            )
-            return
-        self._on_new_profile()
-
-    # ── empty state ────────────────────────────────────────────────────
+    # ── empty state ──────────────────────────────────────────────────────
 
     def _build_empty_state(self) -> None:
         if not self._empty_widget:
@@ -343,14 +431,16 @@ class ProfilePage(PageWidget):
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.setSpacing(20)
 
-        title = QLabel("Create Your First Profile")
+        title = QLabel("Create Your First Slot")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet(f"font-size: 20px; font-weight: 700; color: {TEXT_BRIGHT}; background: transparent;")
+        title.setStyleSheet(
+            f"font-size: 20px; font-weight: 700; color: {TEXT_BRIGHT}; background: transparent;"
+        )
         layout.addWidget(title)
 
         desc = QLabel(
-            "A profile helps us find the best opportunities for you.\n"
-            "You can create up to 5 profiles for different job search tracks."
+            "A slot represents a job-search track.\n"
+            "Upload a resume to auto-fill your details, or fill in targeting info manually."
         )
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
         desc.setWordWrap(True)
@@ -372,6 +462,7 @@ class ProfilePage(PageWidget):
             QPushButton:hover {{ background-color: {ACCENT_HOVER}; }}
         """)
         upload_btn.clicked.connect(self._on_upload_resume)
+        btn_row.addWidget(upload_btn)
 
         manual_btn = QPushButton("Fill Manually")
         manual_btn.setFixedSize(200, 80)
@@ -388,39 +479,147 @@ class ProfilePage(PageWidget):
             }}
         """)
         manual_btn.clicked.connect(self._on_fill_manual)
-
-        btn_row.addWidget(upload_btn)
         btn_row.addWidget(manual_btn)
+
         layout.addLayout(btn_row)
 
-    # ── form container ─────────────────────────────────────────────────
+    # ── content area ─────────────────────────────────────────────────────
 
-    def _build_form_container(self) -> None:
-        if not self._form_container:
+    def _build_content(self) -> None:
+        if not self._content_layout:
             return
-        layout = self._form_container.layout()
-        self._clear_layout(layout)
-        layout.setContentsMargins(0, 0, 0, 0)
-        self._profile_form = ProfileForm(on_saved=self._on_profile_saved)
-        layout.addWidget(self._profile_form, 1)
+        self._clear_layout(self._content_layout)
 
-    # ── API calls ───────────────────────────────────────────────────────
+        # Resume upload section
+        self._resume_section = QWidget()
+        self._resume_section.setStyleSheet("background: transparent;")
+        self._content_layout.addWidget(self._resume_section)
 
-    def _fetch_profiles(self) -> None:
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(separator_stylesheet(margin_h=0))
+        self._content_layout.addWidget(sep)
+
+        # Parsed data section (read-only)
+        parsed_header = QLabel("Parsed Resume Data")
+        parsed_header.setStyleSheet(
+            f"font-size: 16px; font-weight: 600; color: {TEXT_BRIGHT}; background: transparent;"
+        )
+        self._content_layout.addWidget(parsed_header)
+
+        self._parsed_section = QVBoxLayout()
+        self._parsed_section.setSpacing(12)
+        self._parsed_section.setContentsMargins(0, 0, 0, 0)
+        self._content_layout.addLayout(self._parsed_section)
+
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.Shape.HLine)
+        sep2.setStyleSheet(separator_stylesheet(margin_h=0))
+        self._content_layout.addWidget(sep2)
+
+        # Targeting form
+        targeting_header = QLabel("Targeting")
+        targeting_header.setStyleSheet(
+            f"font-size: 16px; font-weight: 600; color: {TEXT_BRIGHT}; background: transparent;"
+        )
+        self._content_layout.addWidget(targeting_header)
+
+        self._targeting_form = TargetingForm()
+        self._content_layout.addWidget(self._targeting_form)
+
+        self._content_layout.addStretch(1)
+
+    def _rebuild_resume_section(self, slot_data: dict[str, Any]) -> None:
+        if not self._resume_section:
+            return
+        layout = self._resume_section.layout()
+        if layout:
+            self._clear_layout(layout)
+        else:
+            layout = QHBoxLayout(self._resume_section)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(12)
+
+        resume_file = slot_data.get("resume_filename")
+        if resume_file:
+            info = QLabel(f"Resume: {resume_file}")
+            info.setStyleSheet(
+                f"font-size: 13px; color: {TEXT_SECONDARY}; background: transparent;"
+            )
+            layout.addWidget(info)
+            layout.addStretch()
+            re_up = QPushButton("Re-upload Resume")
+            re_up.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {BG_ELEVATED}; color: {TEXT_BRIGHT};
+                    border: 1px solid {BORDER_SUBTLE}; border-radius: 6px;
+                    padding: 8px 16px; font-size: 12px; font-weight: 600;
+                }}
+                QPushButton:hover {{
+                    border-color: {ACCENT_LIGHT};
+                    background-color: {ACCENT_MUTED_BG};
+                }}
+            """)
+            re_up.clicked.connect(self._on_upload_resume)
+            layout.addWidget(re_up)
+        else:
+            info = QLabel("No resume uploaded yet. Upload a resume to auto-fill skills, education, and experience.")
+            info.setWordWrap(True)
+            info.setStyleSheet(
+                f"font-size: 13px; color: {TEXT_MUTED}; background: transparent;"
+            )
+            layout.addWidget(info, 1)
+            up_btn = QPushButton("Upload Resume")
+            up_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {ACCENT}; color: white; border: none;
+                    border-radius: 6px; padding: 8px 20px; font-size: 13px; font-weight: 700;
+                }}
+                QPushButton:hover {{ background-color: {ACCENT_HOVER}; }}
+            """)
+            up_btn.clicked.connect(self._on_upload_resume)
+            layout.addWidget(up_btn)
+
+    def _rebuild_parsed_data(self, slot_data: dict[str, Any]) -> None:
+        if not self._parsed_section:
+            return
+        self._clear_layout(self._parsed_section)
+
+        skills = slot_data.get("skills") or []
+        education = slot_data.get("education") or []
+        experience = slot_data.get("experience") or []
+        projects = slot_data.get("projects") or []
+
+        if not any([skills, education, experience, projects]):
+            empty = QLabel("No parsed resume data. Upload a resume to populate this section.")
+            empty.setWordWrap(True)
+            empty.setStyleSheet(
+                f"font-size: 13px; color: {TEXT_MUTED}; background: transparent; padding: 8px 0;"
+            )
+            self._parsed_section.addWidget(empty)
+            return
+
+        _render_skills(self._parsed_section, skills)
+        _render_education(self._parsed_section, education)
+        _render_experience(self._parsed_section, experience)
+        _render_projects(self._parsed_section, projects)
+
+    # ── API calls ────────────────────────────────────────────────────────
+
+    def _fetch_slots(self) -> None:
         uid = get_active_user_id()
         try:
             resp = httpx.get(f"{API_BASE}/users/{uid}/profiles", timeout=10)
             resp.raise_for_status()
-            self._profiles = resp.json()
+            self._slots = resp.json()
         except httpx.HTTPError:
-            self._profiles = []
-
+            self._slots = []
         self._sync_ui()
 
     def _sync_ui(self) -> None:
-        if not self._profiles:
+        if not self._slots:
             self._switcher_widget.setVisible(False)
-            self._form_container.setVisible(False)
+            self._content_area.setVisible(False)
             self._build_empty_state()
             self._empty_widget.setVisible(True)
         else:
@@ -428,47 +627,48 @@ class ProfilePage(PageWidget):
             self._rebuild_switcher()
             self._switcher_widget.setVisible(True)
 
-            # If no active profile, select the first one
-            if not self._active_profile_id or self._active_profile_id not in {p.get("id") for p in self._profiles}:
-                self._active_profile_id = self._profiles[0].get("id")
+            if not self._active_slot_id or self._active_slot_id not in {p.get("id") for p in self._slots}:
+                self._active_slot_id = self._slots[0].get("id")
 
-            # Show form for active profile
-            self._load_profile_into_form(self._active_profile_id)
-            self._form_container.setVisible(True)
+            self._load_slot_into_view(self._active_slot_id)
+            self._content_area.setVisible(True)
 
-    def _load_profile_into_form(self, profile_id: str | None) -> None:
-        if not profile_id or not self._profile_form:
+    def _load_slot_into_view(self, slot_id: str | None) -> None:
+        if not slot_id:
             return
         try:
-            resp = httpx.get(f"{API_BASE}/profiles/id/{profile_id}", timeout=10)
+            resp = httpx.get(f"{API_BASE}/profiles/id/{slot_id}", timeout=10)
             resp.raise_for_status()
             data = resp.json()
-            self._profile_form.clear()
-            self._profile_form.set_profile_id(profile_id)
-            self._profile_form.populate(data)
         except httpx.HTTPError:
-            QMessageBox.warning(self, "Error", "Failed to load profile data.")
-
-    # ── callbacks ──────────────────────────────────────────────────────
-
-    def _on_profile_selected(self, profile_id: str) -> None:
-        if profile_id == self._active_profile_id:
+            QMessageBox.warning(self, "Error", "Failed to load slot data.")
             return
-        self._active_profile_id = profile_id
-        # Rebuild switcher to highlight active card
-        self._rebuild_switcher()
-        self._load_profile_into_form(profile_id)
 
-    def _on_profile_deleted(self, profile_id: str) -> None:
-        self._profiles = [p for p in self._profiles if p.get("id") != profile_id]
-        if self._active_profile_id == profile_id:
-            self._active_profile_id = None
+        self._build_content()
+        self._rebuild_resume_section(data)
+        self._rebuild_parsed_data(data)
+        if self._targeting_form:
+            self._targeting_form.set_slot_id(slot_id)
+            self._targeting_form.populate(data)
+
+    # ── callbacks ────────────────────────────────────────────────────────
+
+    def _on_slot_selected(self, slot_id: str) -> None:
+        if slot_id == self._active_slot_id:
+            return
+        self._active_slot_id = slot_id
+        self._rebuild_switcher()
+        self._load_slot_into_view(slot_id)
+
+    def _on_slot_deleted(self, slot_id: str) -> None:
+        self._slots = [p for p in self._slots if p.get("id") != slot_id]
+        if self._active_slot_id == slot_id:
+            self._active_slot_id = None
         self._sync_ui()
 
-    def _on_new_profile(self) -> None:
-        """Show the Upload vs Manual choice."""
+    def _on_new_slot(self) -> None:
         dialog = QDialog(self)
-        dialog.setWindowTitle("New Profile")
+        dialog.setWindowTitle("New Slot")
         dialog.setMinimumWidth(480)
         dialog.setStyleSheet("""
             QDialog { background-color: #12121f; color: #e4e4f0; }
@@ -477,7 +677,7 @@ class ProfilePage(PageWidget):
         layout.setSpacing(16)
         layout.setContentsMargins(24, 24, 24, 24)
 
-        title = QLabel("How would you like to create this profile?")
+        title = QLabel("How would you like to set up this slot?")
         title.setWordWrap(True)
         title.setStyleSheet(
             "font-size: 18px; font-weight: 700; color: #f0f0ff; background: transparent;"
@@ -551,7 +751,6 @@ class ProfilePage(PageWidget):
             QMessageBox.critical(self, "Error", f"Parse failed:\n{e}")
             return
 
-        # Build a partial profile dict from parsed data
         partial: dict[str, Any] = {}
         if data.get("skills"):
             partial["skills"] = data["skills"]
@@ -562,10 +761,7 @@ class ProfilePage(PageWidget):
         if data.get("projects"):
             partial["projects"] = data["projects"]
 
-        # Derive a suggested name from parsed data
         name_suggestion = self._derive_name_from_parsed(data)
-
-        # Show the form with parsed data pre-filled, in create mode
         self._show_create_form(partial, name_suggestion)
 
     def _derive_name_from_parsed(self, data: dict[str, Any]) -> str:
@@ -583,19 +779,20 @@ class ProfilePage(PageWidget):
     def _show_create_form(
         self, prefill: dict[str, Any], name_suggestion: str,
     ) -> None:
-        """Show the ProfileForm in create mode with optional pre-filled data."""
         self._empty_widget.setVisible(False)
         self._switcher_widget.setVisible(False)
+        self._content_area.setVisible(False)
 
-        self._build_form_container()
-        if self._profile_form:
-            self._profile_form.set_name_suggestion(name_suggestion or None)
-            self._profile_form.populate(prefill)
-            self._profile_form.set_profile_id(None)
+        self._build_content()
+        if self._targeting_form:
+            self._targeting_form.set_slot_id(None)
+            self._targeting_form.populate(prefill)
+            name = name_suggestion or None
+            if name and self._targeting_form._name:
+                self._targeting_form._name.setText(name)
 
-        self._form_container.setVisible(True)
+        self._content_area.setVisible(True)
 
-    def _on_profile_saved(self, profile_id: str | None) -> None:
-        """Callback after a profile is saved — refresh list and select it."""
-        self._active_profile_id = profile_id
-        self._fetch_profiles()
+    def _on_slot_saved(self, slot_id: str | None) -> None:
+        self._active_slot_id = slot_id
+        self._fetch_slots()

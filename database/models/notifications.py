@@ -12,6 +12,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database.base import Base
 
 if TYPE_CHECKING:
+    from database.models.profiles import Profile
     from database.models.users import User
 
 
@@ -23,6 +24,9 @@ class Notification(Base):
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+    profile_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        Uuid, ForeignKey("profiles.id", ondelete="CASCADE"), nullable=True, index=True,
     )
     type_: Mapped[str] = mapped_column(
         "type", String(20), nullable=False,
@@ -60,4 +64,7 @@ class Notification(Base):
 
     user: Mapped[User] = relationship(
         "User", back_populates="notifications",
+    )
+    profile: Mapped[Optional[Profile]] = relationship(
+        "Profile", back_populates="notifications",
     )

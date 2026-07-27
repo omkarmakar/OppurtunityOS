@@ -1,4 +1,4 @@
-"""Reusable profile form widget — create and edit profiles."""
+"""Targeting form widget — edit slot-level targeting fields."""
 
 from __future__ import annotations
 
@@ -6,25 +6,26 @@ from typing import Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog,
-    QFormLayout,
-    QGroupBox,
+    QComboBox,
+    QFrame,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QPushButton,
-    QScrollArea,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
-
-from frontend.user_context import get_active_user_id
-
-API_BASE = "http://127.0.0.1:8000/api/v1"
+from frontend.theme import (
+    ACCENT,
+    BORDER_SUBTLE,
+    TEXT_BRIGHT,
+    TEXT_SECONDARY,
+    card_frame_stylesheet,
+    muted_label_stylesheet,
+)
 
 
 class TagInput(QWidget):
@@ -84,438 +85,182 @@ class TagInput(QWidget):
         super().mousePressEvent(event)
 
 
-class FormSection(QGroupBox):
-    """A styled section for profile form fields."""
+class TargetingForm(QWidget):
+    """Form for editing slot-level targeting fields.
 
-    def __init__(self, title: str, parent: QWidget | None = None) -> None:
-        super().__init__(title, parent)
-
-
-class ProfileForm(QWidget):
-    """Reusable form for creating/editing a profile.
-
-    Modes:
-      - create: POST /profiles on save (no profile_id set)
-      - edit: PUT /profiles/id/{profile_id} on save
-      - review: pre-filled with parsed resume data, user edits then saves (create mode)
+    Editable fields: slot name, preferred locations, remote preference,
+    salary expectations, target companies.
     """
 
-    def __init__(
-        self,
-        parent: QWidget | None = None,
-        on_saved: callable | None = None,
-    ) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._profile_id: str | None = None
-        self._user_id: str = get_active_user_id()
-        self._profile_name_suggestion: str | None = None
-        self._on_saved = on_saved
+        self._slot_id: str | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setSpacing(16)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        self._build_name(layout)
+        self._build_locations(layout)
+        self._build_remote_and_salary(layout)
+        self._build_companies(layout)
+        self._build_save_button(layout)
+        layout.addStretch(1)
 
-        content = QWidget()
-        content.setStyleSheet("QWidget { background: transparent; }")
-        form_layout = QVBoxLayout(content)
-        form_layout.setSpacing(8)
-        form_layout.setContentsMargins(0, 0, 0, 0)
+    def _field_card(self, title: str) -> tuple[QFrame, QVBoxLayout]:
+        card = QFrame()
+        card.setObjectName("targetFieldCard")
+        card.setStyleSheet(card_frame_stylesheet("targetFieldCard"))
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 12, 16, 12)
+        card_layout.setSpacing(6)
+        label = QLabel(title)
+        label.setStyleSheet(muted_label_stylesheet(size=12, weight=600))
+        card_layout.addWidget(label)
+        return card, card_layout
 
-        self._build_name_row(form_layout)
-        self._build_basic_info(form_layout)
-        self._build_education(form_layout)
-        self._build_experience(form_layout)
-        self._build_projects(form_layout)
-        self._build_skills(form_layout)
-        self._build_locations(form_layout)
-        self._build_companies(form_layout)
-        self._build_keywords(form_layout)
-        self._build_salary(form_layout)
-        self._build_links(form_layout)
-        self._build_buttons(form_layout)
-
-        form_layout.addStretch(1)
-        scroll.setWidget(content)
-        layout.addWidget(scroll, 1)
-
-    # ── helpers ─────────────────────────────────────────────────────────
-
-    def _line_edit(self, placeholder: str = "") -> QLineEdit:
-        le = QLineEdit()
-        le.setPlaceholderText(placeholder)
-        return le
-
-    def _text_edit(self) -> QTextEdit:
-        te = QTextEdit()
-        te.setMaximumHeight(100)
-        return te
-
-    # ── build sections ──────────────────────────────────────────────────
-
-    def _build_name_row(self, parent_layout: QVBoxLayout) -> None:
-        section = FormSection("Profile Label")
-        form = QFormLayout(section)
-        form.setSpacing(8)
-        self._name = self._line_edit("e.g. R&D Track, AI/ML Track")
-        form.addRow("Name:", self._name)
-        parent_layout.addWidget(section)
-
-    def _build_basic_info(self, parent_layout: QVBoxLayout) -> None:
-        section = FormSection("Basic Information")
-        form = QFormLayout(section)
-        form.setSpacing(8)
-        self._display_name = self._line_edit("Display name")
-        form.addRow("Display Name:", self._display_name)
-        self._bio = self._text_edit()
-        form.addRow("Bio:", self._bio)
-        parent_layout.addWidget(section)
-
-    def _build_education(self, parent_layout: QVBoxLayout) -> None:
-        section = FormSection("Education")
-        layout = QVBoxLayout(section)
-        self._edu_list = QListWidget()
-        layout.addWidget(self._edu_list)
-        btn_row = QHBoxLayout()
-        add_btn = QPushButton("+ Add Education")
-        add_btn.clicked.connect(self._add_education)
-        rm_btn = QPushButton("Remove Selected")
-        rm_btn.clicked.connect(lambda: self._remove_list_item(self._edu_list))
-        btn_row.addWidget(add_btn)
-        btn_row.addWidget(rm_btn)
-        btn_row.addStretch(1)
-        layout.addLayout(btn_row)
-        parent_layout.addWidget(section)
-
-    def _build_experience(self, parent_layout: QVBoxLayout) -> None:
-        section = FormSection("Experience")
-        layout = QVBoxLayout(section)
-        self._exp_list = QListWidget()
-        layout.addWidget(self._exp_list)
-        btn_row = QHBoxLayout()
-        add_btn = QPushButton("+ Add Experience")
-        add_btn.clicked.connect(self._add_experience)
-        rm_btn = QPushButton("Remove Selected")
-        rm_btn.clicked.connect(lambda: self._remove_list_item(self._exp_list))
-        btn_row.addWidget(add_btn)
-        btn_row.addWidget(rm_btn)
-        btn_row.addStretch(1)
-        layout.addLayout(btn_row)
-        parent_layout.addWidget(section)
-
-    def _build_projects(self, parent_layout: QVBoxLayout) -> None:
-        section = FormSection("Projects")
-        layout = QVBoxLayout(section)
-        self._proj_list = QListWidget()
-        layout.addWidget(self._proj_list)
-        btn_row = QHBoxLayout()
-        add_btn = QPushButton("+ Add Project")
-        add_btn.clicked.connect(self._add_project)
-        rm_btn = QPushButton("Remove Selected")
-        rm_btn.clicked.connect(lambda: self._remove_list_item(self._proj_list))
-        btn_row.addWidget(add_btn)
-        btn_row.addWidget(rm_btn)
-        btn_row.addStretch(1)
-        layout.addLayout(btn_row)
-        parent_layout.addWidget(section)
-
-    def _build_skills(self, parent_layout: QVBoxLayout) -> None:
-        section = FormSection("Skills")
-        layout = QVBoxLayout(section)
-        self._skills = TagInput()
-        layout.addWidget(self._skills)
-        parent_layout.addWidget(section)
+    def _build_name(self, parent_layout: QVBoxLayout) -> None:
+        card, cl = self._field_card("Slot Name")
+        self._name = QLineEdit()
+        self._name.setPlaceholderText("e.g. R&D Track, AI/ML Track")
+        cl.addWidget(self._name)
+        parent_layout.addWidget(card)
 
     def _build_locations(self, parent_layout: QVBoxLayout) -> None:
-        section = FormSection("Preferred Locations")
-        layout = QVBoxLayout(section)
+        card, cl = self._field_card("Preferred Locations")
         self._locations = TagInput()
-        layout.addWidget(self._locations)
-        parent_layout.addWidget(section)
+        cl.addWidget(self._locations)
+        parent_layout.addWidget(card)
 
-    def _build_companies(self, parent_layout: QVBoxLayout) -> None:
-        section = FormSection("Target Companies")
-        layout = QVBoxLayout(section)
-        self._companies = TagInput()
-        layout.addWidget(self._companies)
-        parent_layout.addWidget(section)
-
-    def _build_keywords(self, parent_layout: QVBoxLayout) -> None:
-        section = FormSection("Keywords")
-        layout = QVBoxLayout(section)
-        self._keywords = TagInput()
-        layout.addWidget(self._keywords)
-        parent_layout.addWidget(section)
-
-    def _build_salary(self, parent_layout: QVBoxLayout) -> None:
-        section = FormSection("Salary Expectations")
-        layout = QVBoxLayout(section)
-        self._salary = self._line_edit("e.g. 120k-150k")
-        layout.addWidget(self._salary)
-        parent_layout.addWidget(section)
-
-    def _build_links(self, parent_layout: QVBoxLayout) -> None:
-        section = FormSection("Links")
-        form = QFormLayout(section)
-        form.setSpacing(8)
-        self._linkedin = self._line_edit("https://linkedin.com/in/...")
-        form.addRow("LinkedIn:", self._linkedin)
-        self._github = self._line_edit("https://github.com/...")
-        form.addRow("GitHub:", self._github)
-        self._portfolio = self._line_edit("https://...")
-        form.addRow("Portfolio:", self._portfolio)
-        parent_layout.addWidget(section)
-
-    def _build_buttons(self, parent_layout: QVBoxLayout) -> None:
+    def _build_remote_and_salary(self, parent_layout: QVBoxLayout) -> None:
         row = QHBoxLayout()
-        row.setContentsMargins(0, 16, 0, 0)
-        row.setSpacing(12)
-        self._save_btn = QPushButton("Save Profile")
-        self._save_btn.clicked.connect(self._save)
-        row.addStretch(1)
-        row.addWidget(self._save_btn)
+        row.setSpacing(16)
+
+        remote_card, remote_cl = self._field_card("Remote Preference")
+        self._remote = QComboBox()
+        self._remote.addItems(["", "remote", "hybrid", "on-site"])
+        self._remote.setStyleSheet(f"""
+            QComboBox {{
+                background-color: #222238; color: {TEXT_BRIGHT};
+                border: 1px solid {BORDER_SUBTLE}; border-radius: 6px;
+                padding: 6px 12px; font-size: 12px;
+            }}
+            QComboBox:hover {{ background-color: #2c2c48; }}
+            QComboBox QAbstractItemView {{
+                background-color: #1a1a2e; color: {TEXT_BRIGHT};
+                selection-background-color: {ACCENT};
+            }}
+        """)
+        remote_cl.addWidget(self._remote)
+        row.addWidget(remote_card, 1)
+
+        salary_card, salary_cl = self._field_card("Salary Expectations")
+        self._salary = QLineEdit()
+        self._salary.setPlaceholderText("e.g. 120k-150k")
+        salary_cl.addWidget(self._salary)
+        row.addWidget(salary_card, 1)
+
         parent_layout.addLayout(row)
 
-    # ── dialogs ─────────────────────────────────────────────────────────
+    def _build_companies(self, parent_layout: QVBoxLayout) -> None:
+        card, cl = self._field_card("Target Companies")
+        self._companies = TagInput()
+        cl.addWidget(self._companies)
+        parent_layout.addWidget(card)
 
-    def _show_entry_dialog(
-        self, title: str, fields: list[tuple[str, str]],
-    ) -> dict[str, str] | None:
-        dialog = QDialog(self)
-        dialog.setWindowTitle(title)
-        dialog.setMinimumWidth(400)
-        dialog.setStyleSheet("""
-            QDialog { background-color: #1a1a2e; color: #e4e4f0; font-size: 13px; }
-            QLineEdit {
-                padding: 6px 10px; border: 1px solid #2a2a44;
-                border-radius: 6px; background-color: #0f0f1a; color: #e4e4f0;
-            }
-            QLineEdit:focus { border-color: #7c3aed; }
-            QPushButton {
-                padding: 6px 16px; border: none; border-radius: 6px;
-                font-weight: 600; color: #e4e4f0;
-            }
-        """)
-        layout = QVBoxLayout(dialog)
-        form = QFormLayout()
-        widgets: dict[str, QLineEdit] = {}
-        for label, placeholder in fields:
-            le = QLineEdit()
-            le.setPlaceholderText(placeholder)
-            form.addRow(f"{label}:", le)
-            widgets[label] = le
-        layout.addLayout(form)
-
+    def _build_save_button(self, parent_layout: QVBoxLayout) -> None:
         btn_row = QHBoxLayout()
-        cancel = QPushButton("Cancel")
-        cancel.setStyleSheet("background-color: #252540;")
-        cancel.clicked.connect(dialog.reject)
-        ok = QPushButton("OK")
-        ok.setStyleSheet("background-color: #7c3aed;")
-        ok.clicked.connect(dialog.accept)
-        btn_row.addStretch(1)
-        btn_row.addWidget(cancel)
-        btn_row.addWidget(ok)
-        layout.addLayout(btn_row)
+        btn_row.setContentsMargins(0, 8, 0, 0)
+        btn_row.addStretch()
+        self._save_btn = QPushButton("Save Targeting")
+        self._save_btn.setObjectName("primaryButton")
+        self._save_btn.setStyleSheet(f"""
+            QPushButton#primaryButton {{
+                background-color: {ACCENT}; color: white; border: none;
+                border-radius: 8px; padding: 10px 24px;
+                font-size: 14px; font-weight: 700;
+            }}
+            QPushButton#primaryButton:hover {{ background-color: #6d28d9; }}
+        """)
+        self._save_btn.clicked.connect(self._save)
+        btn_row.addWidget(self._save_btn)
+        parent_layout.addLayout(btn_row)
 
-        result = dialog.exec()
-        if result != QDialog.DialogCode.Accepted:
-            return None
-        return {k: w.text() for k, w in widgets.items()}
+    def set_slot_id(self, slot_id: str | None) -> None:
+        self._slot_id = slot_id
 
-    def _add_education(self) -> None:
-        result = self._show_entry_dialog("Add Education", [
-            ("Institution", "MIT"),
-            ("Degree", "B.S."),
-            ("Field", "Computer Science"),
-            ("Start Date", "2018-09"),
-            ("End Date", "2022-06"),
-        ])
-        if result and result.get("Institution"):
-            text = f"{result['Institution']} - {result['Degree']} in {result['Field']} ({result['Start Date']} - {result['End Date']})"
-            item = QListWidgetItem(text)
-            item.setData(Qt.ItemDataRole.UserRole, result)
-            self._edu_list.addItem(item)
-
-    def _add_experience(self) -> None:
-        result = self._show_entry_dialog("Add Experience", [
-            ("Company", "Google"),
-            ("Role", "Software Engineer"),
-            ("Description", "Worked on..."),
-            ("Start Date", "2022-07"),
-            ("End Date", "present"),
-        ])
-        if result and result.get("Company"):
-            text = f"{result['Role']} @ {result['Company']} ({result['Start Date']} - {result['End Date']})"
-            item = QListWidgetItem(text)
-            item.setData(Qt.ItemDataRole.UserRole, result)
-            self._exp_list.addItem(item)
-
-    def _add_project(self) -> None:
-        result = self._show_entry_dialog("Add Project", [
-            ("Name", "My App"),
-            ("Description", "What it does"),
-            ("Technologies", "Python, FastAPI"),
-            ("URL", "https://github.com/user/app"),
-        ])
-        if result and result.get("Name"):
-            text = f"[Project] {result['Name']} - {result['Technologies']}"
-            item = QListWidgetItem(text)
-            item.setData(Qt.ItemDataRole.UserRole, result)
-            self._proj_list.addItem(item)
-
-    def _remove_list_item(self, lst: QListWidget) -> None:
-        for item in lst.selectedItems():
-            lst.takeItem(lst.row(item))
-
-    # ── data population / collection ────────────────────────────────────
-
-    def set_profile_id(self, profile_id: str | None) -> None:
-        self._profile_id = profile_id
-
-    def get_profile_id(self) -> str | None:
-        return self._profile_id
-
-    def set_user_id(self, user_id: str) -> None:
-        self._user_id = user_id
-
-    def set_name_suggestion(self, name: str | None) -> None:
-        self._profile_name_suggestion = name
-        if name and not self._name.text():
-            self._name.setText(name)
+    def get_slot_id(self) -> str | None:
+        return self._slot_id
 
     def populate(self, data: dict[str, Any]) -> None:
         self._name.setText(data.get("name") or "")
-        self._display_name.setText(data.get("display_name") or "")
-        self._bio.setPlainText(data.get("bio") or "")
         self._salary.setText(data.get("salary_expectations") or "")
-        self._linkedin.setText(data.get("linkedin_url") or "")
-        self._github.setText(data.get("github_url") or "")
-        self._portfolio.setText(data.get("portfolio") or "")
-
-        self._skills.set_tags(data.get("skills") or [])
         self._locations.set_tags(data.get("preferred_locations") or [])
         self._companies.set_tags(data.get("target_companies") or [])
-        self._keywords.set_tags(data.get("keywords") or [])
-
-        self._edu_list.clear()
-        for entry in data.get("education") or []:
-            text = f"{entry.get('institution','')} - {entry.get('degree','')} in {entry.get('field','')} ({entry.get('start_date','')} - {entry.get('end_date','')})"
-            item = QListWidgetItem(text)
-            item.setData(Qt.ItemDataRole.UserRole, entry)
-            self._edu_list.addItem(item)
-
-        self._exp_list.clear()
-        for entry in data.get("experience") or []:
-            text = f"{entry.get('role','')} @ {entry.get('company','')} ({entry.get('start_date','')} - {entry.get('end_date','')})"
-            item = QListWidgetItem(text)
-            item.setData(Qt.ItemDataRole.UserRole, entry)
-            self._exp_list.addItem(item)
-
-        self._proj_list.clear()
-        for entry in data.get("projects") or []:
-            text = f"[Project] {entry.get('name','')} - {entry.get('technologies','')}"
-            item = QListWidgetItem(text)
-            item.setData(Qt.ItemDataRole.UserRole, entry)
-            self._proj_list.addItem(item)
+        remote = data.get("remote_preference") or ""
+        idx = self._remote.findText(remote)
+        self._remote.setCurrentIndex(idx if idx >= 0 else 0)
 
     def collect(self) -> dict[str, Any]:
         data: dict[str, Any] = {}
-        fields = {
-            "display_name": self._display_name.text(),
-            "bio": self._bio.toPlainText(),
-            "salary_expectations": self._salary.text(),
-            "linkedin_url": self._linkedin.text(),
-            "github_url": self._github.text(),
-            "portfolio": self._portfolio.text(),
-        }
-        for k, v in fields.items():
-            if v:
-                data[k] = v
-
-        data["skills"] = self._skills.get_tags()
-        data["preferred_locations"] = self._locations.get_tags()
-        data["target_companies"] = self._companies.get_tags()
-        data["keywords"] = self._keywords.get_tags()
-
-        data["education"] = []
-        for i in range(self._edu_list.count()):
-            item = self._edu_list.item(i)
-            entry = item.data(Qt.ItemDataRole.UserRole)
-            if entry:
-                data["education"].append(entry)
-
-        data["experience"] = []
-        for i in range(self._exp_list.count()):
-            item = self._exp_list.item(i)
-            entry = item.data(Qt.ItemDataRole.UserRole)
-            if entry:
-                data["experience"].append(entry)
-
-        data["projects"] = []
-        for i in range(self._proj_list.count()):
-            item = self._proj_list.item(i)
-            entry = item.data(Qt.ItemDataRole.UserRole)
-            if entry:
-                data["projects"].append(entry)
-
-        result = {k: v for k, v in data.items() if v}
         name = self._name.text().strip()
         if name:
-            result["name"] = name
-        return result
+            data["name"] = name
+        salary = self._salary.text().strip()
+        if salary:
+            data["salary_expectations"] = salary
+        locs = self._locations.get_tags()
+        if locs:
+            data["preferred_locations"] = locs
+        companies = self._companies.get_tags()
+        if companies:
+            data["target_companies"] = companies
+        remote = self._remote.currentText().strip()
+        if remote:
+            data["remote_preference"] = remote
+        return data
 
     def clear(self) -> None:
         self._name.clear()
-        self._display_name.clear()
-        self._bio.clear()
         self._salary.clear()
-        self._linkedin.clear()
-        self._github.clear()
-        self._portfolio.clear()
-        self._skills.set_tags([])
         self._locations.set_tags([])
         self._companies.set_tags([])
-        self._keywords.set_tags([])
-        self._edu_list.clear()
-        self._exp_list.clear()
-        self._proj_list.clear()
-        self._profile_id = None
-
-    # ── save ────────────────────────────────────────────────────────────
+        self._remote.setCurrentIndex(0)
+        self._slot_id = None
 
     def _save(self) -> None:
         import httpx
+        from PySide6.QtWidgets import QMessageBox
 
         data = self.collect()
-        data["name"] = self._name.text().strip() or f"Profile {self._profile_id or 'New'}"
+        if not data.get("name"):
+            QMessageBox.warning(self, "Validation", "Slot name is required.")
+            return
+
         try:
-            if self._profile_id:
+            if self._slot_id:
                 resp = httpx.put(
-                    f"{API_BASE}/profiles/id/{self._profile_id}",
-                    json=data, timeout=10,
-                )
-                resp.raise_for_status()
-                QMessageBox.information(self, "Saved", "Profile updated.")
-                self.populate(resp.json())
-            else:
-                data["user_id"] = self._user_id
-                resp = httpx.post(
-                    f"{API_BASE}/profiles",
+                    f"http://127.0.0.1:8000/api/v1/profiles/id/{self._slot_id}",
                     json=data, timeout=10,
                 )
                 resp.raise_for_status()
                 saved = resp.json()
-                self._profile_id = saved.get("id")
-                QMessageBox.information(self, "Created", "Profile created.")
                 self.populate(saved)
+                QMessageBox.information(self, "Saved", "Slot targeting updated.")
+            else:
+                from frontend.user_context import get_active_user_id
+
+                data["user_id"] = get_active_user_id()
+                resp = httpx.post(
+                    "http://127.0.0.1:8000/api/v1/profiles",
+                    json=data, timeout=10,
+                )
+                resp.raise_for_status()
+                saved = resp.json()
+                self._slot_id = saved.get("id")
+                self.populate(saved)
+                QMessageBox.information(self, "Created", "New slot created.")
         except httpx.HTTPError as e:
-            QMessageBox.critical(self, "Error", f"Failed to save profile:\n{e}")
-            return
-        if self._on_saved:
-            self._on_saved(self._profile_id)
+            QMessageBox.critical(self, "Error", f"Failed to save:\n{e}")

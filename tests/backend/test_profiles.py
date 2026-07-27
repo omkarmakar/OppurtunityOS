@@ -36,22 +36,22 @@ class TestProfileCRUD:
         assert resp.status_code == 201
         assert resp.json()["name"] == "Second"
 
-    def test_create_max_5_profiles_then_409(self, client: TestClient) -> None:
+    def test_create_max_profiles_then_409(self, client: TestClient) -> None:
         uid = uuid.uuid4()
-        for i in range(5):
+        for i in range(10):
             resp = client.post("/api/v1/profiles", json={
                 "user_id": str(uid),
                 "name": f"Profile {i+1}",
             })
             assert resp.status_code == 201
 
-        # 6th should fail
+        # 11th should fail
         resp = client.post("/api/v1/profiles", json={
             "user_id": str(uid),
-            "name": "Profile 6",
+            "name": "Profile 11",
         })
         assert resp.status_code == 409
-        assert "Maximum of 5 profiles" in resp.json()["detail"]
+        assert "Maximum of 10 profiles" in resp.json()["detail"]
 
     def test_list_profiles(self, client: TestClient) -> None:
         uid = uuid.uuid4()
@@ -162,3 +162,17 @@ class TestProfileCRUD:
         assert data["portfolio"] == "https://portfolio.dev"
         assert data["education"][0]["institution"] == "X"
         assert data["experience"][0]["company"] == "W"
+
+    def test_profile_response_includes_new_resume_fields(self, client: TestClient) -> None:
+        uid = uuid.uuid4()
+        resp = client.post("/api/v1/profiles", json={
+            "user_id": str(uid),
+            "name": "Test Resume Fields",
+            "remote_preference": "remote",
+        })
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["raw_extracted_text"] is None
+        assert data["resume_filename"] is None
+        assert data["resume_uploaded_at"] is None
+        assert data["remote_preference"] == "remote"

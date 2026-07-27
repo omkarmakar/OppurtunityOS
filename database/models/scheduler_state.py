@@ -1,4 +1,4 @@
-"""Scheduler state model — persists per-user, per-task last-run information.
+"""Scheduler state model — persists per-user, per-profile, per-task last-run information.
 
 Stores the LOCAL calendar date on which a task last ran successfully so that
 window-based scheduling can answer "has this task already run today?" across
@@ -17,15 +17,20 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database.base import Base
 
 if TYPE_CHECKING:
+    from database.models.profiles import Profile
     from database.models.users import User
 
 
 class SchedulerState(Base):
     __tablename__ = "scheduler_state"
 
-    # One row per (user_id, task_name) pair.
+    # One row per (user_id, profile_id, task_name) tuple.
+    # profile_id is NULL for user-level tasks (e.g. "digest").
     __table_args__ = (
-        UniqueConstraint("user_id", "task_name", name="uq_scheduler_state_user_task"),
+        UniqueConstraint(
+            "user_id", "profile_id", "task_name",
+            name="uq_scheduler_state_user_profile_task",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -33,6 +38,9 @@ class SchedulerState(Base):
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+    profile_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        Uuid, ForeignKey("profiles.id", ondelete="CASCADE"), nullable=True, index=True,
     )
     task_name: Mapped[str] = mapped_column(
         String(100), nullable=False,
@@ -57,3 +65,4 @@ class SchedulerState(Base):
     )
 
     user: Mapped[User] = relationship("User", back_populates="scheduler_states")
+    profile: Mapped[Optional[Profile]] = relationship("Profile", back_populates="scheduler_states")

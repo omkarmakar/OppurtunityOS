@@ -17,7 +17,7 @@ from backend.schemas.scoring import (
 from database.models.opportunities import Opportunity
 from database.repositories.opportunity_repository import OpportunityRepository
 from database.repositories.profile_repository import ProfileRepository
-from services.opportunity_scorer import OpportunityScorer
+from services.opportunity_scorer import create_opportunity_scorer
 
 router = APIRouter()
 
@@ -33,7 +33,7 @@ async def score_opportunity(
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    scorer = OpportunityScorer(
+    scorer = create_opportunity_scorer(
         provider_name=req.provider,
         model_name=req.model,
     )
@@ -81,7 +81,7 @@ async def score_and_save_opportunities(
             )
         opportunities.append(opp)
 
-    scorer = OpportunityScorer(
+    scorer = create_opportunity_scorer(
         provider_name=req.provider,
         model_name=req.model,
     )

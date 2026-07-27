@@ -12,6 +12,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database.base import Base
 
 if TYPE_CHECKING:
+    from database.models.notifications import Notification
+    from database.models.scheduler_state import SchedulerState
     from database.models.users import User
 
 
@@ -79,6 +81,18 @@ class Profile(Base):
     preferences: Mapped[Optional[dict[str, Any]]] = mapped_column(
         JSON, nullable=True,
     )
+    raw_extracted_text: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True,
+    )
+    resume_filename: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True,
+    )
+    resume_uploaded_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+    remote_preference: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False,
     )
@@ -88,4 +102,10 @@ class Profile(Base):
 
     user: Mapped[User] = relationship(
         "User", back_populates="profiles",
+    )
+    scheduler_states: Mapped[list[SchedulerState]] = relationship(
+        "SchedulerState", back_populates="profile", cascade="all, delete-orphan",
+    )
+    notifications: Mapped[list[Notification]] = relationship(
+        "Notification", back_populates="profile", cascade="all, delete-orphan",
     )
