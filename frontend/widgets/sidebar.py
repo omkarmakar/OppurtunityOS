@@ -56,20 +56,32 @@ class SidebarButton(QPushButton):
 
 
 class Sidebar(QWidget):
-    """Sidebar with navigation buttons for each page."""
+    """Sidebar with collapsible navigation for reduced cognitive load."""
 
     navigation_changed = Signal(int)
 
-    NAV_ITEMS: list[tuple[str, str]] = [
-        ("\u25A3", "Dashboard"),
-        ("\u25C9", "Profile"),
-        ("\u2609", "Search"),
-        ("\u2605", "Opportunities"),
-        ("\u2666", "Bookmarks"),
-        ("\u25C6", "Notifications"),
-        ("\u2699", "Settings"),
-        ("\u2630", "Logs"),
+    # Restructured nav with category grouping
+    # Format: (icon, label, page_index, category)
+    NAV_ITEMS: list[tuple[str, str, int, str]] = [
+        ("\u25A3", "Home", 0, "main"),          # Dashboard (index 0)
+        ("\u2609", "Discover", 2, "main"),      # Search (index 2)
+        ("\u2605", "Saved", 4, "main"),         # Bookmarks (index 4)
+        ("\u25C9", "Profile", 1, "advanced"),   # Profile (index 1)
+        ("\u2699", "Settings", 6, "advanced"),  # Settings (index 6)
+        ("\u2630", "Logs", 7, "advanced"),      # Logs (index 7)
     ]
+
+    # Page index mapping for backward compatibility
+    PAGE_INDICES = {
+        "Dashboard": 0,
+        "Profile": 1,
+        "Search": 2,
+        "Opportunities": 3,
+        "Bookmarks": 4,
+        "Notifications": 5,
+        "Settings": 6,
+        "Logs": 7,
+    }
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -136,11 +148,39 @@ class Sidebar(QWidget):
         nav_layout.setContentsMargins(0, 0, 0, 0)
         nav_layout.setSpacing(2)
 
-        for idx, (icon, label) in enumerate(self.NAV_ITEMS):
-            btn = SidebarButton(icon, label)
-            btn.clicked.connect(lambda checked=False, i=idx: self._on_nav_clicked(i))
-            self._buttons.append(btn)
-            nav_layout.addWidget(btn)
+        # Build main navigation items
+        for icon, label, page_idx, category in self.NAV_ITEMS:
+            if category == "main":
+                btn = SidebarButton(icon, label)
+                btn.clicked.connect(lambda checked=False, i=page_idx: self._on_nav_clicked(i))
+                self._buttons.append(btn)
+                nav_layout.addWidget(btn)
+        
+        # Add spacer before advanced section
+        nav_layout.addSpacing(12)
+        
+        # Add advanced section header
+        advanced_header = QLabel("Advanced")
+        advanced_header.setStyleSheet(f"""
+            QLabel {{
+                font-size: 10px;
+                font-weight: 600;
+                color: {TEXT_MUTED};
+                padding: 8px 16px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                background-color: transparent;
+            }}
+        """)
+        nav_layout.addWidget(advanced_header)
+        
+        # Add advanced navigation items
+        for icon, label, page_idx, category in self.NAV_ITEMS:
+            if category == "advanced":
+                btn = SidebarButton(icon, label)
+                btn.clicked.connect(lambda checked=False, i=page_idx: self._on_nav_clicked(i))
+                self._buttons.append(btn)
+                nav_layout.addWidget(btn)
 
         nav_layout.addStretch(1)
         layout.addWidget(nav_container, 1)
@@ -157,9 +197,29 @@ class Sidebar(QWidget):
         """)
         layout.addWidget(version)
 
-    def _on_nav_clicked(self, index: int) -> None:
-        self._select(index)
-        self.navigation_changed.emit(index)
+    def _on_nav_clicked(self, page_index: int) -> None:
+        """Handle navigation button click with proper page index."""
+        self._select_by_page_index(page_index)
+        self.navigation_changed.emit(page_index)
+    
+    def _select_by_page_index(self, page_index: int) -> None:
+        """Select button by page index, handling the new navigation structure."""
+        # Find which button corresponds to this page index
+        for btn_idx, btn in enumerate(self._buttons):
+            # Map button to page based on NAV_ITEMS
+            nav_item = None
+            for item in self.NAV_ITEMS:
+                if item[2] == page_index:  # item[2] is the page_index
+                    nav_item = item
+                    break
+            
+            is_this_button = False
+            for nav_item in self.NAV_ITEMS:
+                if nav_item[2] == page_index and nav_item[1] == btn.text().strip().split()[-1]:
+                    is_this_button = True
+                    break
+            
+            btn.setChecked(is_this_button)
 
     def _select(self, index: int) -> None:
         for i, btn in enumerate(self._buttons):

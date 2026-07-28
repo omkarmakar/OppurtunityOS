@@ -2,36 +2,37 @@
 
 from __future__ import annotations
 
-# —— Color palette ——
-BG_APP = "#0c0c14"
-BG_SURFACE = "#12121f"
-BG_ELEVATED = "#181828"
-BG_CARD = "#1a1a2e"
-BG_INPUT = "#222238"
-BG_INPUT_HOVER = "#2c2c48"
+# —— Color palette (Calm theme: warm charcoal-blue with muted teal accent) ——
+BG_APP = "#1a1f2e"           # Warm charcoal-blue
+BG_SURFACE = "#212a3e"       # Slightly lighter for surface distinction
+BG_ELEVATED = "#262f42"      # Elevated surface
+BG_CARD = "#282f46"          # Card background
+BG_INPUT = "#2f3850"         # Input field background
+BG_INPUT_HOVER = "#3d4a60"   # Input hover state
 
-BORDER_SUBTLE = "#2a2a42"
-BORDER_DEFAULT = "#353552"
-BORDER_FOCUS = "#7c3aed"
+BORDER_SUBTLE = "#3a4558"    # Subtle borders
+BORDER_DEFAULT = "#4a5568"   # Default border
+BORDER_FOCUS = "#4a9b7f"     # Muted teal focus
 
-TEXT_PRIMARY = "#e8e8f2"
-TEXT_SECONDARY = "#9898b8"
-TEXT_MUTED = "#6b6b8a"
-TEXT_BRIGHT = "#f4f4fc"
+TEXT_PRIMARY = "#d8dce6"     # Warm off-white
+TEXT_SECONDARY = "#8a92a8"   # Muted secondary text
+TEXT_MUTED = "#626d85"       # Very muted text
+TEXT_BRIGHT = "#e8ecf4"      # Bright accent text
 
-ACCENT = "#7c3aed"
-ACCENT_HOVER = "#6d28d9"
-ACCENT_LIGHT = "#a78bfa"
-ACCENT_MUTED_BG = "#2a1a4e"
-ACCENT_SUBTLE = "#1f1535"
+ACCENT = "#4a9b7f"           # Muted teal (calm accent)
+ACCENT_HOVER = "#3d8369"     # Teal hover (darker)
+ACCENT_LIGHT = "#6fb39a"     # Teal light variant
+ACCENT_MUTED_BG = "#1f3a30"  # Teal muted background
+ACCENT_SUBTLE = "#1a2d27"    # Teal subtle background
 
-SIDEBAR_ACTIVE_BG = "#251a45"
-SIDEBAR_HOVER_BG = "#1a1a30"
-SIDEBAR_ACTIVE_BORDER = "#8b5cf6"
+SIDEBAR_ACTIVE_BG = "#2a3a4a"    # Calm sidebar active
+SIDEBAR_HOVER_BG = "#232f42"     # Calm sidebar hover
+SIDEBAR_ACTIVE_BORDER = "#4a9b7f" # Teal sidebar border
 
-GREEN = "#10b981"
-AMBER = "#f59e0b"
-RED = "#ef4444"
+# Desaturated status colors for calm feel
+GREEN = "#6bad89"            # Desaturated green
+AMBER = "#c9a470"            # Desaturated amber
+RED = "#b8715e"              # Desaturated red
 
 RADIUS_SM = "6px"
 RADIUS_MD = "10px"
