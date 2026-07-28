@@ -55,6 +55,12 @@ class Opportunity(Base):
     source_type: Mapped[Optional[str]] = mapped_column(
         String(50), nullable=True,
     )
+    company: Mapped[Optional[str]] = mapped_column(
+        String(500), nullable=True,
+    )
+    industry: Mapped[Optional[str]] = mapped_column(
+        String(200), nullable=True,
+    )
     status: Mapped[str] = mapped_column(
         String(50), default="new", nullable=False, index=True,
     )
@@ -63,6 +69,15 @@ class Opportunity(Base):
     )
     metadata_: Mapped[Optional[dict[str, Any]]] = mapped_column(
         "metadata", JSON, nullable=True,
+    )
+    posted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+    deadline_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+    application_deadline_raw: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True,
     )
     discovered_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False,
@@ -87,11 +102,12 @@ class Opportunity(Base):
     missing_skills: Mapped[Optional[list[str]]] = mapped_column(
         JSON, nullable=True,
     )
-    application_deadline: Mapped[Optional[str]] = mapped_column(
-        String(100), nullable=True,
-    )
     ranking_explanation: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True,
+    )
+    # Deprecated: use deadline_at instead. Kept for backward compatibility during migration.
+    application_deadline: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True,
     )
     ai_scored_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True,

@@ -12,7 +12,10 @@ from sqlalchemy.orm import Session
 
 from core.config import DigestSettings
 from database.models.notifications import Notification
+from database.models.opportunities import Opportunity
 from database.repositories.notification_repository import NotificationRepository
+from database.repositories.opportunity_repository import OpportunityRepository
+from services.notifications.digest_formatter import DigestFormatter
 from services.notifications.providers import EmailNotificationProvider
 
 logger = logging.getLogger(__name__)
@@ -28,6 +31,7 @@ class DailyDigestService:
         settings: DigestSettings | None = None,
     ) -> None:
         self._repo = NotificationRepository(db)
+        self._opp_repo = OpportunityRepository(db)
         self._email = email_provider
         self._settings = settings or DigestSettings()
 
@@ -51,6 +55,17 @@ class DailyDigestService:
         )
         if not unread:
             return {"notifications_count": 0, "email_sent": False, "digest_id": None}
+
+        # Load opportunities for context
+        opportunities = {}
+        for notif in unread:
+            if notif.opportunity_id:
+                try:
+                    opp = self._opp_repo.get_by_id(notif.opportunity_id)
+                    if opp:
+                        opportunities[str(opp.id)] = opp
+                except Exception:
+                    pass
 
         digest_id = uuid.uuid4()
         summary = self._build_summary(unread)
@@ -78,11 +93,16 @@ class DailyDigestService:
                 if profile_name
                 else f"Daily Digest — {len(unread)} new notification(s)"
             )
+            
+            # Use enhanced HTML formatter for email
+            html_body = DigestFormatter.format_digest_html(unread, opportunities)
+            
             email_sent = self._email.send(
                 str(user_id),
                 subject,
-                summary["text"],
+                summary["text"],  # Fallback text version
                 email_to=user_email,
+                html_body=html_body,
             )
             if email_sent:
                 digest_notif.channel = "email"
