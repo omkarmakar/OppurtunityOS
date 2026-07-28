@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from services.search.brave_provider import BraveSearchProvider
 from services.search.dummy_provider import DummyProvider
+from services.search.jobboard_provider import JobBoardProvider
 from services.search.provider import SearchProvider
 from services.search.tavily_provider import TavilySearchProvider
 
@@ -46,6 +47,11 @@ class SearchRegistry:
     def default(cls) -> SearchRegistry:
         registry = cls()
         registry.register(DummyProvider())
+        try:
+            registry.register(JobBoardProvider())
+            logger.debug("JobBoardProvider registered for real job board searches")
+        except Exception as exc:
+            logger.debug("JobBoardProvider not available: %s", exc)
         try:
             registry.register(BraveSearchProvider())
         except Exception as exc:

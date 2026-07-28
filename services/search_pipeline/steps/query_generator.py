@@ -21,26 +21,54 @@ from services.search_pipeline.steps.query_generator_rules import (
     RuleBasedQueryGenerator,
 )
 
-QUERY_GENERATOR_PROMPT = """You are an expert job search query generator for undergraduate students and freshers. Analyze the user's profile and create highly specific, targeted search queries that will return ACTUAL JOB POSTINGS (not tutorials, courses, or articles).
+QUERY_GENERATOR_PROMPT = """You are an expert job search query generator specializing in finding REAL opportunities on major job boards and company websites.
 
 User Profile:
 {profile_context}
 
-CRITICAL RULES:
-1. Generate {count} distinct search queries for REAL JOB OPPORTUNITIES only
-2. Each query MUST include job-specific keywords: "job", "hiring", "career", "position", "vacancy", "opening", "recruitment", "apply now"
-3. Include experience level: "entry level", "junior", "fresher", "internship", "graduate", "trainee"
-4. If locations are specified, include location + job keywords (e.g., "software engineer jobs Mumbai", "python developer jobs remote India")
-5. Use specific skills from profile combined with job keywords (e.g., "python developer job hiring", "react js developer vacancy")
-6. AVOID educational content keywords: "tutorial", "course", "learn", "guide", "how to", "what is", "roadmap"
-7. Format queries as if typing into a job board or job search engine
-8. Mix these query types:
-   - Skill + job + location (e.g., "python developer jobs Bangalore")
-   - Role + experience level (e.g., "junior software engineer jobs entry level")
-   - Company + hiring (if target companies specified)
-   - Remote + skill + job (e.g., "remote python developer jobs hiring")
+TASK: Generate {count} diverse, high-quality search queries that will return ACTUAL JOB POSTINGS from:
+- LinkedIn jobs
+- Naukri.com
+- Indeed
+- Unstop
+- Company career pages
+- AngelList
 
-Return ONLY a JSON array of strings, like: ["query 1", "query 2", ...]"""
+QUERY GENERATION STRATEGY:
+
+1. **Skill-Based Queries**: Combine primary skills with job keywords
+   Example: "python django backend developer jobs"
+   
+2. **Role + Experience Level**: Target entry-level/fresher positions
+   Example: "junior frontend developer hiring 0-1 years experience"
+   
+3. **Location-Specific**: Include geography where specified
+   Example: "software developer jobs Bangalore remote India"
+   
+4. **Technology Stack Queries**: Search for specific technology combinations
+   Example: "React JavaScript web developer positions"
+   
+5. **Company/Industry Focus**: Target specific sectors if mentioned
+   Example: "fintech software engineer jobs hiring"
+   
+6. **Remote/Flexible Work**: Include modern work preferences
+   Example: "work from home developer jobs India"
+   
+7. **Application-Focused**: Search for active hiring
+   Example: "hiring now software engineer fresher jobs"
+   
+8. **Competitive Terms**: Combine skills with hiring keywords
+   Example: "looking for python developer job opening"
+
+CRITICAL RULES:
+- AVOID: tutorials, courses, roadmaps, learning guides, how-to articles, certification prep
+- INCLUDE: "job", "hiring", "position", "vacancy", "opening", "recruitment", "apply", "career"
+- Each query MUST be realistic - as if searching on job boards
+- Mix exact skill names with general terms
+- Include location variants (city, region, country, "remote")
+- For freshers/students: emphasize "entry level", "fresher", "junior", "graduate", "trainee", "internship"
+
+Return ONLY valid JSON array of strings: ["query 1", "query 2", ...]"""
 
 
 class QueryGenerator(PipelineStep):

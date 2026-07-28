@@ -533,7 +533,24 @@ class SearchPage(PageWidget):
             self._results_title.setStyleSheet(f"font-size: 16px; font-weight: 600; color: {GREEN}; background: transparent;")
 
         self._clear_body()
+        
+        # Queries section (for single profile searches)
+        if not is_multi:
+            queries = data.get("queries_generated", [])
+            if queries:
+                queries_label = QLabel("Search Queries Generated:")
+                queries_label.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {TEXT_MUTED}; background: transparent;")
+                self._results_body.addWidget(queries_label)
+                
+                for i, query in enumerate(queries, 1):
+                    query_item = QLabel(f"{i}. {query}")
+                    query_item.setWordWrap(True)
+                    query_item.setStyleSheet(f"font-size: 11px; color: {TEXT_BRIGHT}; background: transparent; margin-left: 12px; padding: 4px 0;")
+                    self._results_body.addWidget(query_item)
+                
+                self._results_body.addSpacing(8)
 
+        # Statistics fields
         if is_multi:
             fields = [
                 ("Pipelines Run", str(data.get("pipelines_run", 0))),
@@ -552,7 +569,6 @@ class SearchPage(PageWidget):
                 fields.append(("Profiles Failed", str(err_count)))
         else:
             fields = [
-                ("Queries Generated", ", ".join(data.get("queries_generated", [])) or "None"),
                 ("Search Results Found", str(data.get("search_results_count", 0))),
                 ("Pages Extracted", str(data.get("pages_extracted", 0))),
                 ("Opportunities Created", str(data.get("opportunities_created", 0))),
@@ -560,7 +576,6 @@ class SearchPage(PageWidget):
                 ("Opportunities Scored", str(data.get("opportunities_scored", 0))),
                 ("Notifications Sent", str(data.get("notifications_sent", 0))),
             ]
-
         for label, value in fields:
             row = QHBoxLayout()
             lbl = QLabel(f"{label}:")

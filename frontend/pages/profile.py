@@ -747,8 +747,247 @@ class ProfilePage(PageWidget):
             resp = httpx.post(f"{API_BASE}/resume/parse", files=files, timeout=30)
             resp.raise_for_status()
             data = resp.json()
+
+            if data.get("skills"):
+                self._skills.set_tags(data["skills"])
+            if data.get("education"):
+                self._edu_list.clear()
+                for e in data["education"]:
+                    text = f"{e.get('institution','')} - {e.get('degree','')} in {e.get('field','')} ({e.get('start_date','')} - {e.get('end_date','')})"
+                    item = QListWidgetItem(text)
+                    item.setData(Qt.ItemDataRole.UserRole, e)
+                    self._edu_list.addItem(item)
+            if data.get("experience"):
+                self._exp_list.clear()
+                for e in data["experience"]:
+                    text = f"{e.get('role','')} @ {e.get('company','')} ({e.get('start_date','')} - {e.get('end_date','')})"
+                    item = QListWidgetItem(text)
+                    item.setData(Qt.ItemDataRole.UserRole, e)
+                    self._exp_list.addItem(item)
+            if data.get("projects"):
+                for p in data["projects"]:
+                    text = f"[Project] {p.get('name','')} - {p.get('technologies','')}"
+                    item = QListWidgetItem(text)
+                    item.setData(Qt.ItemDataRole.UserRole, p)
+                    self._exp_list.addItem(item)
+
+            # Show detailed parsed data dialog
+            self._show_parsed_data_dialog(data)
         except httpx.HTTPError as e:
             QMessageBox.critical(self, "Error", f"Parse failed:\n{e}")
+
+    def _show_parsed_data_dialog(self, data: dict) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Parsed Resume Data")
+        dialog.setGeometry(100, 100, 700, 600)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: #0f0f2e;
+                color: #e0e0ff;
+            }
+            QTabWidget::pane {
+                border: 1px solid #2e1a47;
+            }
+            QTabBar::tab {
+                background-color: #1a0f3a;
+                color: #8888bb;
+                padding: 6px 16px;
+                margin-right: 2px;
+                border: 1px solid #2e1a47;
+            }
+            QTabBar::tab:selected {
+                background-color: #2e1a5f;
+                color: #e0e0ff;
+                border-bottom: 2px solid #7c3aed;
+            }
+            QTextEdit {
+                background-color: #1a0f3a;
+                color: #e0e0ff;
+                border: 1px solid #2e1a47;
+                border-radius: 4px;
+                padding: 8px;
+            }
+        """)
+        
+        layout = QVBoxLayout(dialog)
+        tabs = QTabWidget()
+        
+        # Skills tab
+        skills_text = QTextEdit()
+        skills_text.setReadOnly(True)
+        skills_list = data.get("skills", [])
+        skills_text.setText("\n".join(skills_list) if skills_list else "No skills found")
+        tabs.addTab(skills_text, f"Skills ({len(skills_list)})")
+        
+        # Education tab
+        edu_text = QTextEdit()
+        edu_text.setReadOnly(True)
+        edu_list = data.get("education", [])
+        edu_content = "\n\n".join([
+            f"📚 {e.get('degree', 'N/A')} in {e.get('field', 'N/A')}\n"
+            f"Institution: {e.get('institution', 'N/A')}\n"
+            f"Period: {e.get('start_date', '?')} - {e.get('end_date', '?')}"
+            for e in edu_list
+        ])
+        edu_text.setText(edu_content if edu_list else "No education found")
+        tabs.addTab(edu_text, f"Education ({len(edu_list)})")
+        
+        # Experience tab
+        exp_text = QTextEdit()
+        exp_text.setReadOnly(True)
+        exp_list = data.get("experience", [])
+        exp_content = "\n\n".join([
+            f"💼 {e.get('role', 'N/A')} @ {e.get('company', 'N/A')}\n"
+            f"Period: {e.get('start_date', '?')} - {e.get('end_date', '?')}\n"
+            f"Description: {e.get('description', 'N/A')}"
+            for e in exp_list
+        ])
+        exp_text.setText(exp_content if exp_list else "No experience found")
+        tabs.addTab(exp_text, f"Experience ({len(exp_list)})")
+        
+        # Projects tab
+        proj_text = QTextEdit()
+        proj_text.setReadOnly(True)
+        proj_list = data.get("projects", [])
+        proj_content = "\n\n".join([
+            f"🚀 {p.get('name', 'N/A')}\n"
+            f"Technologies: {p.get('technologies', 'N/A')}\n"
+            f"Description: {p.get('description', 'N/A')}\n"
+            f"URL: {p.get('url', 'N/A')}"
+            for p in proj_list
+        ])
+        proj_text.setText(proj_content if proj_list else "No projects found")
+        tabs.addTab(proj_text, f"Projects ({len(proj_list)})")
+        
+        layout.addWidget(tabs)
+        
+        # Close button
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+        close_btn.setStyleSheet("background-color: #7c3aed; color: white; padding: 8px 16px; border-radius: 4px;")
+        layout.addWidget(close_btn)
+        
+        dialog.exec()
+
+    def _build_buttons(self, parent_layout: QVBoxLayout) -> None:
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 16, 0, 0)
+        row.setSpacing(12)
+        save_btn = self._styled_button("Save Profile", "#7c3aed")
+        save_btn.clicked.connect(self._save_profile)
+        del_btn = self._styled_button("Delete Profile", "#7f1d1d")
+        del_btn.clicked.connect(self._delete_profile)
+        row.addStretch(1)
+        row.addWidget(del_btn)
+        row.addWidget(save_btn)
+        parent_layout.addLayout(row)
+
+    # ── education / experience dialogs ─────────────────────────────────
+
+    def _show_entry_dialog(
+        self, title: str, fields: list[tuple[str, str]],
+    ) -> dict[str, str] | None:
+        dialog = QWidget(None, Qt.WindowType.Dialog)
+        dialog.setWindowTitle(title)
+        dialog.setMinimumWidth(400)
+        dialog.setStyleSheet("""
+            QWidget {
+                background-color: #1a1a2e;
+                color: #e4e4f0;
+                font-size: 13px;
+            }
+            QLineEdit {
+                padding: 6px 10px;
+                border: 1px solid #2a2a44;
+                border-radius: 6px;
+                background-color: #0f0f1a;
+                color: #e4e4f0;
+            }
+            QLineEdit:focus { border-color: #7c3aed; }
+            QPushButton {
+                padding: 6px 16px;
+                border: none;
+                border-radius: 6px;
+                font-weight: 600;
+                color: #e4e4f0;
+            }
+        """)
+        layout = QVBoxLayout(dialog)
+        form = QFormLayout()
+        widgets: dict[str, QLineEdit] = {}
+        for label, placeholder in fields:
+            le = QLineEdit()
+            le.setPlaceholderText(placeholder)
+            form.addRow(f"{label}:", le)
+            widgets[label] = le
+        layout.addLayout(form)
+
+        btn_row = QHBoxLayout()
+        cancel = QPushButton("Cancel")
+        cancel.setStyleSheet("background-color: #252540;")
+        cancel.clicked.connect(dialog.close)
+        ok = QPushButton("OK")
+        ok.setStyleSheet("background-color: #7c3aed;")
+        result: dict[str, str] | None = None
+
+        def on_ok() -> None:
+            nonlocal result
+            result = {k: w.text() for k, w in widgets.items()}
+            dialog.close()
+
+        ok.clicked.connect(on_ok)
+        btn_row.addStretch(1)
+        btn_row.addWidget(cancel)
+        btn_row.addWidget(ok)
+        layout.addLayout(btn_row)
+        dialog.setLayout(layout)
+        dialog.exec()
+        return result
+
+    def _add_education(self) -> None:
+        result = self._show_entry_dialog("Add Education", [
+            ("Institution", "MIT"),
+            ("Degree", "B.S."),
+            ("Field", "Computer Science"),
+            ("Start Date", "2018-09"),
+            ("End Date", "2022-06"),
+        ])
+        if result and result.get("Institution"):
+            text = f"{result['Institution']} - {result['Degree']} in {result['Field']} ({result['Start Date']} - {result['End Date']})"
+            item = QListWidgetItem(text)
+            item.setData(Qt.ItemDataRole.UserRole, result)
+            self._edu_list.addItem(item)
+
+    def _add_experience(self) -> None:
+        result = self._show_entry_dialog("Add Experience", [
+            ("Company", "Google"),
+            ("Role", "Software Engineer"),
+            ("Description", "Worked on..."),
+            ("Start Date", "2022-07"),
+            ("End Date", "present"),
+        ])
+        if result and result.get("Company"):
+            text = f"{result['Role']} @ {result['Company']} ({result['Start Date']} - {result['End Date']})"
+            item = QListWidgetItem(text)
+            item.setData(Qt.ItemDataRole.UserRole, result)
+            self._exp_list.addItem(item)
+
+    def _remove_list_item(self, lst: QListWidget) -> None:
+        for item in lst.selectedItems():
+            lst.takeItem(lst.row(item))
+
+    # ── API operations ─────────────────────────────────────────────────
+
+    def _get_user_id(self) -> str | None:
+        uid = self._user_id_input.text().strip()
+        if not uid:
+            QMessageBox.warning(self, "Error", "Enter a User ID")
+            return None
+        return uid
+
+    def _load_profile(self) -> None:
+        uid = self._get_user_id()
+        if not uid:
             return
 
         partial: dict[str, Any] = {}
