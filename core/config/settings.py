@@ -177,10 +177,14 @@ class EmailSettings(BaseModel):
 class DigestSettings(BaseModel):
     """Daily digest configuration."""
 
-    schedule_hour: int = Field(default=8, ge=0, le=23, description="Hour for daily digest")
-    schedule_minute: int = Field(default=0, ge=0, le=59, description="Minute for daily digest")
+    schedule_hour: int = Field(default=8, ge=0, le=23, description="Hour for daily digest (global fallback)")
+    schedule_minute: int = Field(default=0, ge=0, le=59, description="Minute for daily digest (global fallback)")
+    default_timezone: str = Field(default="UTC", description="Default timezone for digest scheduling")
+    default_frequency: str = Field(default="daily", description="Default frequency: daily or weekly")
     max_opportunities: int = Field(default=20, ge=1, description="Max items in digest")
     include_unread_only: bool = Field(default=True, description="Only include unread notifications")
+    instant_alert_enabled: bool = Field(default=False, description="Enable instant alerts for high-score opportunities")
+    instant_alert_threshold: int = Field(default=80, ge=0, le=100, description="Score threshold for instant alerts")
 
 
 class NotificationSettings(BaseModel):

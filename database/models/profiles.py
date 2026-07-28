@@ -93,6 +93,27 @@ class Profile(Base):
     remote_preference: Mapped[Optional[str]] = mapped_column(
         String(50), nullable=True,
     )
+    digest_timezone: Mapped[str] = mapped_column(
+        String(50), default="UTC", nullable=False,
+    )
+    digest_schedule_hour: Mapped[int] = mapped_column(
+        default=8, nullable=False,
+    )
+    digest_schedule_minute: Mapped[int] = mapped_column(
+        default=0, nullable=False,
+    )
+    digest_frequency: Mapped[str] = mapped_column(
+        String(20), default="daily", nullable=False,
+    )
+    digest_weekly_day: Mapped[Optional[int]] = mapped_column(
+        default=None, nullable=True,
+    )
+    instant_alert_enabled: Mapped[bool] = mapped_column(
+        default=False, nullable=False,
+    )
+    instant_alert_threshold: Mapped[int] = mapped_column(
+        default=80, nullable=False,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False,
     )
