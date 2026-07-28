@@ -474,16 +474,103 @@ class ProfilePage(PageWidget):
                     item.setData(Qt.ItemDataRole.UserRole, p)
                     self._exp_list.addItem(item)
 
-            QMessageBox.information(
-                self, "Parsed",
-                f"Found: {len(data.get('skills', []))} skills, "
-                f"{len(data.get('education', []))} education entries, "
-                f"{len(data.get('experience', []))} experience entries, "
-                f"{len(data.get('projects', []))} projects.\n"
-                "Review and save the profile.",
-            )
+            # Show detailed parsed data dialog
+            self._show_parsed_data_dialog(data)
         except httpx.HTTPError as e:
             QMessageBox.critical(self, "Error", f"Parse failed:\n{e}")
+
+    def _show_parsed_data_dialog(self, data: dict) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Parsed Resume Data")
+        dialog.setGeometry(100, 100, 700, 600)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: #0f0f2e;
+                color: #e0e0ff;
+            }
+            QTabWidget::pane {
+                border: 1px solid #2e1a47;
+            }
+            QTabBar::tab {
+                background-color: #1a0f3a;
+                color: #8888bb;
+                padding: 6px 16px;
+                margin-right: 2px;
+                border: 1px solid #2e1a47;
+            }
+            QTabBar::tab:selected {
+                background-color: #2e1a5f;
+                color: #e0e0ff;
+                border-bottom: 2px solid #7c3aed;
+            }
+            QTextEdit {
+                background-color: #1a0f3a;
+                color: #e0e0ff;
+                border: 1px solid #2e1a47;
+                border-radius: 4px;
+                padding: 8px;
+            }
+        """)
+        
+        layout = QVBoxLayout(dialog)
+        tabs = QTabWidget()
+        
+        # Skills tab
+        skills_text = QTextEdit()
+        skills_text.setReadOnly(True)
+        skills_list = data.get("skills", [])
+        skills_text.setText("\n".join(skills_list) if skills_list else "No skills found")
+        tabs.addTab(skills_text, f"Skills ({len(skills_list)})")
+        
+        # Education tab
+        edu_text = QTextEdit()
+        edu_text.setReadOnly(True)
+        edu_list = data.get("education", [])
+        edu_content = "\n\n".join([
+            f"📚 {e.get('degree', 'N/A')} in {e.get('field', 'N/A')}\n"
+            f"Institution: {e.get('institution', 'N/A')}\n"
+            f"Period: {e.get('start_date', '?')} - {e.get('end_date', '?')}"
+            for e in edu_list
+        ])
+        edu_text.setText(edu_content if edu_list else "No education found")
+        tabs.addTab(edu_text, f"Education ({len(edu_list)})")
+        
+        # Experience tab
+        exp_text = QTextEdit()
+        exp_text.setReadOnly(True)
+        exp_list = data.get("experience", [])
+        exp_content = "\n\n".join([
+            f"💼 {e.get('role', 'N/A')} @ {e.get('company', 'N/A')}\n"
+            f"Period: {e.get('start_date', '?')} - {e.get('end_date', '?')}\n"
+            f"Description: {e.get('description', 'N/A')}"
+            for e in exp_list
+        ])
+        exp_text.setText(exp_content if exp_list else "No experience found")
+        tabs.addTab(exp_text, f"Experience ({len(exp_list)})")
+        
+        # Projects tab
+        proj_text = QTextEdit()
+        proj_text.setReadOnly(True)
+        proj_list = data.get("projects", [])
+        proj_content = "\n\n".join([
+            f"🚀 {p.get('name', 'N/A')}\n"
+            f"Technologies: {p.get('technologies', 'N/A')}\n"
+            f"Description: {p.get('description', 'N/A')}\n"
+            f"URL: {p.get('url', 'N/A')}"
+            for p in proj_list
+        ])
+        proj_text.setText(proj_content if proj_list else "No projects found")
+        tabs.addTab(proj_text, f"Projects ({len(proj_list)})")
+        
+        layout.addWidget(tabs)
+        
+        # Close button
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+        close_btn.setStyleSheet("background-color: #7c3aed; color: white; padding: 8px 16px; border-radius: 4px;")
+        layout.addWidget(close_btn)
+        
+        dialog.exec()
 
     def _build_buttons(self, parent_layout: QVBoxLayout) -> None:
         row = QHBoxLayout()
