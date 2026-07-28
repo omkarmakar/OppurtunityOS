@@ -56,6 +56,7 @@ class OpportunityCreator(PipelineStep):
 
             opp = Opportunity(
                 user_id=profile.user_id,
+                profile_id=profile.id,
                 title=title[:500],
                 description=description,
                 url=url,

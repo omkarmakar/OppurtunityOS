@@ -19,6 +19,7 @@ class TestBookmarksPage:
     def test_widget_structure(self, qtbot: QtBot) -> None:
         page = BookmarksPage()
         qtbot.add_widget(page)
+        assert page._profile_combo is not None
         assert page._prev_btn is not None
         assert page._next_btn is not None
         assert page._page_label is not None

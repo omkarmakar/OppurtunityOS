@@ -121,4 +121,9 @@ class ContentExtractor:
             return None
         if isinstance(extracted, dict):
             return extracted
-        return None
+        return {
+            "title": getattr(extracted, "title", None),
+            "text": getattr(extracted, "text", None),
+            "date": getattr(extracted, "date", None),
+            "author": getattr(extracted, "author", None),
+        }

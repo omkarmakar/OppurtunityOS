@@ -13,9 +13,14 @@ class AIProvider(ABC):
     def name(self) -> str:
         """Human-readable provider name."""
 
-    @property
-    def supported_models(self) -> list[str]:
+    async def supported_models(self) -> list[str]:
         return []
+
+    @property
+    @abstractmethod
+    def default_model(self) -> str:
+        """Default model string for this provider, used as fallback when the
+        caller-supplied model was written for a different provider."""
 
     @abstractmethod
     async def generate(

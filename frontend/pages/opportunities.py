@@ -48,6 +48,7 @@ class OpportunitiesPage(PageWidget):
         self._status_filter = ""
         self._min_score = 0
         self._sort_by = "score"
+        self._profile_id_filter: str | None = None
         super().__init__("Opportunities", parent)
 
     def _setup_ui(self) -> None:
@@ -75,6 +76,21 @@ class OpportunitiesPage(PageWidget):
         self._main_layout.addStretch()
 
         self._load_data()
+        self._load_profiles()
+
+    def _load_profiles(self) -> None:
+        try:
+            resp = httpx.get(
+                f"{API_BASE}/users/{get_active_user_id()}/profiles",
+                timeout=10,
+            )
+            resp.raise_for_status()
+            profiles = resp.json()
+            for p in profiles:
+                label = p.get("name", "Unnamed")
+                self._profile_combo.addItem(label, p.get("id"))
+        except Exception:
+            pass
 
     def _build_header(self) -> None:
         row = QHBoxLayout()
@@ -111,6 +127,28 @@ class OpportunitiesPage(PageWidget):
     def _build_filter_bar(self) -> None:
         bar = QHBoxLayout()
         bar.setSpacing(12)
+
+        profile_lbl = QLabel("Profile:")
+        profile_lbl.setStyleSheet(f"font-size: 12px; color: {TEXT_MUTED}; background: transparent;")
+        bar.addWidget(profile_lbl)
+
+        self._profile_combo = QComboBox()
+        self._profile_combo.addItem("All Profiles", None)
+        self._profile_combo.setStyleSheet(f"""
+            QComboBox {{
+                background-color: #2a2a44; color: {TEXT_BRIGHT}; border: none;
+                border-radius: 6px; padding: 6px 12px; font-size: 12px;
+                min-width: 120px;
+            }}
+            QComboBox:hover {{ background-color: #3a3a5e; }}
+            QComboBox::drop-down {{ border: none; width: 20px; }}
+            QComboBox QAbstractItemView {{
+                background-color: #1a1a2e; color: {TEXT_BRIGHT};
+                selection-background-color: {ACCENT};
+            }}
+        """)
+        self._profile_combo.currentIndexChanged.connect(self._on_filter_change)
+        bar.addWidget(self._profile_combo)
 
         status_lbl = QLabel("Status:")
         status_lbl.setStyleSheet(f"font-size: 12px; color: {TEXT_MUTED}; background: transparent;")
@@ -254,6 +292,7 @@ class OpportunitiesPage(PageWidget):
             idx = self._status_combo.currentIndex()
             status_val = STATUS_VALUES[idx] if 0 <= idx < len(STATUS_VALUES) else ""
 
+            profile_id = self._profile_combo.currentData()
             params = {
                 "user_id": get_active_user_id(),
                 "page": self._page,
@@ -261,6 +300,8 @@ class OpportunitiesPage(PageWidget):
                 "sort_by": "score" if self._sort_combo.currentIndex() == 0 else "date",
                 "min_score": self._score_spin.value(),
             }
+            if profile_id:
+                params["profile_id"] = profile_id
             if status_val:
                 params["status"] = status_val
 

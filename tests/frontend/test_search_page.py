@@ -7,7 +7,7 @@ from unittest.mock import patch
 import httpx
 from pytestqt.qtbot import QtBot
 
-from frontend.pages.search import SearchPage
+from frontend.pages.search import ALL_PROFILES_TOKEN, SearchPage
 
 
 class TestSearchPage:
@@ -20,6 +20,7 @@ class TestSearchPage:
         page = SearchPage()
         qtbot.add_widget(page)
         assert page._provider_combo is not None
+        assert page._profile_combo is not None
         assert page._queries_spin is not None
         assert page._results_spin is not None
         assert page._skip_rank_check is not None
@@ -35,17 +36,55 @@ class TestSearchPage:
         assert page._is_running is False
 
     def test_combo_empty_until_loaded(self, qtbot: QtBot) -> None:
-        with patch.object(httpx, "get") as mock_get:
-            mock_response = mock_get.return_value
-            mock_response.json.return_value = [{"name": "dummy"}]
-            mock_response.raise_for_status.return_value = None
-            mock_response.status_code = 200
+        def mock_response(url, **kwargs):
+            class Resp:
+                status_code = 200
+                def raise_for_status(self):
+                    pass
+                def json(self):
+                    if "search-providers" in url:
+                        return [{"name": "tavily"}]
+                    if "profiles" in url:
+                        return [{"id": "11111111-1111-1111-1111-111111111111", "name": "Test"}]
+                    return {}
+            return Resp()
+        with patch.object(httpx, "get", side_effect=mock_response):
             page = SearchPage()
             qtbot.add_widget(page)
             assert page._provider_combo.count() == 0
             qtbot.wait(50)
             assert page._provider_combo.count() == 1
-            assert page._provider_combo.currentText() == "dummy"
+            assert page._provider_combo.currentText() == "tavily"
+            # First item should be "All Profiles (1 slot)" with token data
+            assert page._profile_combo.count() == 2
+            assert page._profile_combo.itemData(0) == ALL_PROFILES_TOKEN
+            assert page._profile_combo.itemData(1) == "11111111-1111-1111-1111-111111111111"
+
+    def test_combo_with_multiple_profiles(self, qtbot: QtBot) -> None:
+        def mock_response(url, **kwargs):
+            class Resp:
+                status_code = 200
+                def raise_for_status(self):
+                    pass
+                def json(self):
+                    if "search-providers" in url:
+                        return [{"name": "tavily"}]
+                    if "profiles" in url:
+                        return [
+                            {"id": "p1", "name": "AI/ML"},
+                            {"id": "p2", "name": "R&D"},
+                        ]
+                    return {}
+            return Resp()
+        with patch.object(httpx, "get", side_effect=mock_response):
+            page = SearchPage()
+            qtbot.add_widget(page)
+            qtbot.wait(50)
+            # All Profiles + 2 individual = 3 items
+            assert page._profile_combo.count() == 3
+            assert "All Profiles" in page._profile_combo.itemText(0)
+            assert page._profile_combo.itemText(1) == "AI/ML"
+            assert page._profile_combo.itemText(2) == "R&D"
 
     def test_combo_fallback_on_http_error(self, qtbot: QtBot) -> None:
         with patch.object(httpx, "get") as mock_get:

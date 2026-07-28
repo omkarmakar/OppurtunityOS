@@ -20,7 +20,10 @@ class OpenAIProvider(AIProvider):
         return "OpenAI"
 
     @property
-    def supported_models(self) -> list[str]:
+    def default_model(self) -> str:
+        return "gpt-4o-mini"
+
+    async def supported_models(self) -> list[str]:
         return [
             "gpt-4o",
             "gpt-4o-mini",
@@ -57,7 +60,13 @@ class OpenAIProvider(AIProvider):
                 json=body,
                 timeout=120,
             )
-            resp.raise_for_status()
+            if not resp.is_success:
+                error_body = resp.json() if resp.text else {}
+                error_msg = (
+                    error_body.get("error", {}).get("message", "")
+                    or resp.text[:200]
+                )
+                raise ValueError(f"OpenAI API error ({resp.status_code}): {error_msg}")
             data = resp.json()
 
         choice = data["choices"][0]

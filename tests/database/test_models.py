@@ -150,9 +150,9 @@ class TestUserModel:
         session.add(profile)
         session.commit()
 
-        assert user.profile is not None
-        assert user.profile.display_name == "Bob"
-        assert user.profile.user is user
+        assert len(user.profiles) == 1
+        assert user.profiles[0].display_name == "Bob"
+        assert user.profiles[0].user is user
 
     def test_cascade_delete_user_deletes_profile(self, session: Session) -> None:
         user = User(email="cascade@example.com", password_hash="pw")

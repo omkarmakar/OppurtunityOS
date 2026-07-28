@@ -55,6 +55,7 @@ class NotifierStep(PipelineStep):
                 try:
                     self._svc.create_notification(
                         user_id=user_id,
+                        profile_id=profile.id,
                         type_="opportunity",
                         title=title,
                         message=message,
@@ -75,6 +76,7 @@ class NotifierStep(PipelineStep):
             }
             self._svc.create_notification(
                 user_id=user_id,
+                profile_id=profile.id,
                 type_="pipeline_run",
                 title=summary_title,
                 message=f"{len(opportunities)} opportunities processed, {len(scored)} matched your profile",

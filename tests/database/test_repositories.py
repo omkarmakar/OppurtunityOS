@@ -140,8 +140,8 @@ class TestUserRepository:
         repo = UserRepository(session)
         user = repo.get(existing_user.id)
         assert user is not None
-        assert user.profile is not None
-        assert user.profile.display_name == "Repo Tester"
+        assert len(user.profiles) == 1
+        assert user.profiles[0].display_name == "Repo Tester"
 
     def test_user_with_sources(self, session: Session, existing_user: User) -> None:
         session.add(Source(

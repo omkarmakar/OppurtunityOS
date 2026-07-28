@@ -12,9 +12,12 @@ class TestBookmarks:
         self, client: TestClient,
     ) -> tuple[uuid.UUID, uuid.UUID]:
         uid = uuid.uuid4()
-        client.post("/api/v1/profiles", json={"user_id": str(uid), "display_name": "Test"})
+        profile_resp = client.post(
+            "/api/v1/profiles", json={"user_id": str(uid), "display_name": "Test"},
+        )
+        profile_id = profile_resp.json()["id"]
         resp = client.post(
-            f"/api/v1/pipeline/run?user_id={uid}&search_provider=dummy&max_queries=1&max_results=1",
+            f"/api/v1/pipeline/run?profile_id={profile_id}&search_provider=dummy&max_queries=1&max_results=1",
         )
         # Get the opportunity ID from the list
         list_resp = client.get(f"/api/v1/opportunities?user_id={uid}")

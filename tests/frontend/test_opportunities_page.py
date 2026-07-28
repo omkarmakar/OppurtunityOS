@@ -18,6 +18,7 @@ class TestOpportunitiesPage:
     def test_widget_structure(self, qtbot: QtBot) -> None:
         page = OpportunitiesPage()
         qtbot.add_widget(page)
+        assert page._profile_combo is not None
         assert page._status_combo is not None
         assert page._score_spin is not None
         assert page._sort_combo is not None

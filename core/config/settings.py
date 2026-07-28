@@ -101,6 +101,26 @@ class PluginSettings(BaseModel):
     plugin_dir: str = Field(default="plugins", description="Plugin discovery directory")
 
 
+class QueryGenerationSettings(BaseModel):
+    """Query generation backend selection."""
+
+    backend: str = Field(
+        default="rules",
+        description="Which backend to use for generating search queries from profile data. "
+                    "'rules' = template-based (no AI call), 'llm' = uses the AI provider.",
+    )
+    job_boards: list[str] = Field(
+        default_factory=lambda: [
+            "linkedin.com/jobs",
+            "indeed.com",
+            "naukri.com",
+            "wellfound.com",
+        ],
+        description="Job board domains for site:-scoped queries (Tier C). "
+                    "Configured via OOS_AI__QUERY_GENERATION__JOB_BOARDS as a JSON array.",
+    )
+
+
 class AISettings(BaseModel):
     """AI provider configuration."""
 
@@ -114,8 +134,32 @@ class AISettings(BaseModel):
     )
     default_provider: str = Field(default="openrouter", description="Default AI provider name")
     default_model: str = Field(default="meta-llama/llama-3.3-70b-instruct:free", description="Default model name - verified free model on OpenRouter")
+    fallback_providers: list[str] = Field(
+        default_factory=lambda: ["groq", "gemini"],
+        description="Ordered fallback providers tried after default_provider fails. "
+                    "Set via OOS_AI__FALLBACK_PROVIDERS as a comma-separated string "
+                    "(e.g. groq,gemini) or a JSON array (e.g. [\"groq\",\"gemini\"]).",
+    )
     cache_ttl: int = Field(default=300, ge=0, description="Cache TTL in seconds")
     max_retries: int = Field(default=3, ge=0, le=10, description="Max retry attempts")
+    query_generation: QueryGenerationSettings = Field(
+        default_factory=QueryGenerationSettings,
+    )
+    scoring_backend: str = Field(
+        default="embedding",
+        description="Which backend to use for scoring opportunities. "
+                    "'embedding' = local sentence-embedding model (no AI call), "
+                    "'llm' = uses the AI provider.",
+    )
+    narrative_enrichment_enabled: bool = Field(
+        default=False,
+        description="When True and scoring_backend is 'embedding', makes exactly one "
+                    "short LLM call per opportunity (or batched per run) purely to "
+                    "rewrite summary/pros/cons/ranking_explanation into more natural "
+                    "prose. The score and skills are NOT re-derived — the LLM only "
+                    "rephrases already-computed facts. Falls back to template text "
+                    "on failure. Off by default.",
+    )
 
 
 class EmailSettings(BaseModel):
@@ -148,6 +192,15 @@ class NotificationSettings(BaseModel):
     polling_interval_seconds: int = Field(default=60, ge=10, le=3600, description="Scheduler polling interval")
     email: EmailSettings = Field(default_factory=EmailSettings)
     digest: DigestSettings = Field(default_factory=DigestSettings)
+
+
+class ProfileSettings(BaseModel):
+    """Profile/slot limits."""
+
+    max_slots_per_user: int = Field(
+        default=10, ge=1, le=100,
+        description="Maximum number of profile slots per user",
+    )
 
 
 class BackgroundSchedulerSettings(BaseModel):
@@ -250,6 +303,7 @@ class AppConfig(BaseSettings):
     tavily: TavilySettings = Field(default_factory=TavilySettings)
     ai: AISettings = Field(default_factory=AISettings)
     plugins: PluginSettings = Field(default_factory=PluginSettings)
+    profiles: ProfileSettings = Field(default_factory=ProfileSettings)
     paths: PathSettings = Field(default_factory=PathSettings)
     notifications: NotificationSettings = Field(default_factory=NotificationSettings)
     background_scheduler: BackgroundSchedulerSettings = Field(default_factory=BackgroundSchedulerSettings)

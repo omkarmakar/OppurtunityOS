@@ -6,6 +6,425 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Frontend simplification for resume-slot model (P34)**:
+  - `TargetingForm` (`frontend/widgets/profile_form.py`) replaces the old full `ProfileForm` — only exposes slot name, preferred locations, remote preference, salary expectations, and target companies as editable fields.
+  - `ProfilePage` (`frontend/pages/profile.py`) is rewritten for per-slot flow: horizontal switcher shows `SlotCard`s (with name + skill/location-derived subtitle, no delete button); selecting a slot loads the read-only parsed data (skills as chips, education/experience/projects as sub-cards) and the `TargetingForm` for targeting fields; the upload-resume flow pre-fills the parsed sections and switches to create mode.
+  - `SearchPage` (`frontend/pages/search.py`) profile-combo now includes an "All Profiles (N slots)" option that triggers `MultiPipelineWorker` — runs the search pipeline for every slot sequentially and displays aggregate totals ("X total results across N pipelines").
+  - Tests: `tests/frontend/test_profile_page.py` rewritten for `SlotCard`/`NewSlotCard`/`SectionCard`/`TargetingForm`/`ProfilePage` (18 tests); `tests/frontend/test_search_page.py` updated for the new "All Profiles" combo entry.
+
+- **Per-profile pipeline scheduler (P32)**: The background scheduler now registers one independent ``ScheduledTask`` per user profile (task name ``"pipeline:{profile_id}"``) instead of a single user-level task. Each profile's daily search window is tracked independently via its own ``SchedulerState`` row, so one profile failing never blocks another, and a profile that already completed today is correctly skipped while others still due are run.
+  - ``database/models/scheduler_state.py`` — added nullable ``profile_id`` column (FK to ``profiles.id``); changed ``UniqueConstraint`` from ``(user_id, task_name)`` to ``(user_id, profile_id, task_name)`` so that ``NULL`` profile_id is used for user-level tasks (e.g. ``"digest"``) while pipeline rows carry a real profile_id.
+  - ``database/migrations/versions/012_scheduler_state_per_profile.py`` — Alembic migration 012.
+  - ``database/repositories/scheduler_state_repository.py`` — all three methods (``get_by_user_and_task``, ``get_or_create``, ``update_last_run``) accept an optional ``profile_id`` parameter and include it in lookups/upserts.
+  - ``services/background/tasks.py`` — ``_make_pipeline_run_condition`` and ``_pipeline_callback`` now accept a ``profile_id`` and operate on that single profile; ``create_and_start_scheduler`` fetches the user's profiles at startup and registers one task per profile; a new ``_check_and_log_missed_window`` helper reports per-profile missed-window diagnostics; new profiles added while the app is running require a restart (noted in docstring).
+  - Tests: 34 tests in ``test_background_scheduler.py`` (3 new multi-profile isolation tests), all passing.
+
+### Added
+
+- **Resume-as-profile architecture (P31)**: Profile model now has `raw_extracted_text`, `resume_filename`, `resume_uploaded_at`, and `remote_preference` columns. The first three are auto-populated by the resume upload-and-save flow; `remote_preference` is a user-editable targeting field alongside `preferred_locations`, `salary_expectations`, and `target_companies`.
+  - `core/config/settings.py` — new `ProfileSettings.max_slots_per_user` (default 10) replaces the hardcoded `MAX_PROFILES_PER_USER = 5` in the profiles endpoint.
+  - `database/models/profiles.py` — added four new columns.
+  - `database/migrations/versions/011_resume_as_profile.py` — Alembic migration adding the columns.
+  - `backend/schemas/profiles.py` — `ProfileCreate`/`ProfileUpdate` now accept `remote_preference`; `ProfileResponse` exposes all four new fields.
+  - `backend/api/v1/endpoints/profiles.py` — slot cap is read from `AppConfig().profiles.max_slots_per_user` instead of a hardcoded constant.
+  - `backend/api/v1/endpoints/resume.py` — refactored `parse_and_save` to store `raw_extracted_text`, `resume_filename`, and `resume_uploaded_at` on the profile; file is kept permanently in `data/resumes/`.
+  - `services/search_pipeline/steps/query_generator_rules.py` — when `raw_extracted_text` is non-empty, extracts additional skills via the shared vocabulary and includes `remote_preference` in the location list.
+  - `services/opportunity_scorer/embedding_scorer.py` — `_build_profile_text()` prefers `raw_extracted_text` as the primary embedding source when available.
+  - `frontend/pages/profile.py` — `MAX_PROFILES` updated from 5 to 10 to match the new backend default.
+  - Tests: backend profile CRUD tests updated for 10-slot cap and new response fields.
+
+### Added
+
+- **Rule-based QueryGenerator backend (default, no AI required)**: The
+  `QueryGenerator` pipeline step previously made an LLM call via
+  `generate_with_fallback` on every pipeline run just to concatenate profile
+  fields (skills, roles, locations, companies, keywords, education) with
+  domain keywords into search query strings — pure templating, not generation.
+  - `services/search_pipeline/steps/query_generator_rules.py` — new
+    `RuleBasedQueryGenerator` class implementing the same `PipelineStep`
+    interface. Combines every profile field with bundled plugin keyword sets
+    via template expansion (e.g. `"{skill} {role} {location}"`,
+    `"{skill} {plugin_keyword}"`, `"{role} jobs"`). Deduplicates, caps at
+    the configured query count, and returns fallback queries when the profile
+    has almost no data. No AI provider is ever called.
+  - `core/config/settings.py` — new `QueryGenerationSettings` nested model
+    with a `backend: str = "rules"` field (`"rules"` or `"llm"`) inside
+    `AISettings.query_generation`, configurable via
+    `OOS_AI__QUERY_GENERATION__BACKEND`.
+  - `services/search_pipeline/steps/query_generator.py` — new
+    `create_query_generator()` factory function that reads the config backend
+    and returns either `RuleBasedQueryGenerator` or the original
+    `QueryGenerator`. The single call site in `pipeline.py` now uses the
+    factory instead of constructing `QueryGenerator` directly.
+  - The old LLM-based `QueryGenerator` is kept completely intact and
+    functional — flip `backend` back to `"llm"` to restore previous
+    behaviour unchanged.
+  - Tests: `tests/services/test_query_generator_rules.py` — 17 tests
+    covering candidate generation (full profile, empty profile, skills-only,
+    roles-only, plugin keyword integration), query selection (dedup, cap,
+    under-cap, fallback), execute integration (ctx key, missing profile,
+    plugin keywords in output, cap honoured, fallback on empty, provider
+    tracking), and factory switching (default returns rules, `"llm"` config
+    returns `QueryGenerator`).
+
+- **Embedding-based OpportunityScorer backend (default, no AI required)**:
+  The `OpportunityScorer` previously made one LLM call per opportunity (the
+  single most expensive pipeline step) via `generate_with_fallback` to
+  produce relevance_score, summary, pros, cons, required_skills,
+  missing_skills, ranking_explanation — and `application_deadline`.
+  This replaces it with a local sentence-embedding model for the numeric
+  score and rule-based logic for everything else; no network call, no LLM
+  dependency. The exact same `ScoredOpportunity` dataclass shape is
+  preserved so all call sites are unaffected.
+  - `services/opportunity_scorer/embedding_scorer.py` — new
+    `EmbeddingOpportunityScorer` class exposing the same three public
+    methods (`score_opportunity`, `score_and_save`,
+    `score_multiple_and_save`) as the LLM-based `OpportunityScorer`.
+  - **Relevance score**: Loads `sentence-transformers/all-MiniLM-L6-v2`
+    (~80 MB) once at module level — subsequent instantiation in the same
+    process reuses the cached model. Builds profile embedding text using
+    the identical field-combining logic as `_build_profile_context` in
+    `scorer.py` (skills, roles, locations, companies, keywords, education,
+    experience). Computes cosine similarity between profile and opportunity
+    embeddings, then applies a sigmoid calibration
+    (`1/(1+exp(-10*(sim-0.35)))`) to spread scores across the full 0-100
+    range instead of concentrating them in the narrow band raw cosine
+    similarity produces. Scores match downstream UI thresholds (green ≥70,
+    amber ≥40, red <40) sensibly.
+  - **required_skills / missing_skills**: Rule-based, not embedding-based.
+    A static frozenset of ~280 common technical/domain skill terms
+    (software, hardware, research, business) is defined in the file.
+    `_extract_skills_from_text` does a case-insensitive substring match
+    against the opportunity's title+description. `missing_skills` =
+    required_skills not present in `profile.skills`.
+  - **pros / cons / summary / ranking_explanation**: Template-based, no
+    generated prose. Summary: `"{title} — {score}% relevance, {n} skills
+    identified, {m} of your skills apply."` Pros: one line per matched
+    skill/keyword overlap plus any target_company match. Cons: one line
+    per missing_skill, capped at 5. ranking_explanation: deterministic
+    sentence referencing the actual cosine similarity score and skill
+    overlap count.
+  - **application_deadline**: Left as empty string — the LLM was the only
+    path that could extract this. A separate rule-based date-extraction
+    pass could be added later.
+  - Dependencies: `sentence-transformers>=3.4.0` added to `pyproject.toml`.
+    This transitively pulls `torch` (CPU-only on PyPI for Windows — no
+    CUDA build). Installed size ~800 MB–1 GB for torch alone, making this
+    by far the heaviest dependency in the project.
+  - `core/config/settings.py` — new `scoring_backend: str = "embedding"`
+    field on `AISettings` (alongside the existing `query_generation`
+    backend), configurable via `OOS_AI__SCORING_BACKEND`. `"embedding"`
+    (default) uses the local model; `"llm"` restores the original AI call.
+  - `services/opportunity_scorer/embedding_scorer.py` — new
+    `create_opportunity_scorer()` factory function (mirroring P27's
+    `create_query_generator` pattern) that reads the config backend and
+    returns the appropriate scorer.
+  - **Both call sites updated** to use the factory:
+    `services/search_pipeline/steps/ranking.py` (AIRankingStep) and
+    `backend/api/v1/endpoints/scoring.py` (both `/opportunities/score`
+    and `/opportunities/score-and-save`). No structural changes needed
+    — the factory returns an object with the same interface.
+  - The old LLM-based `OpportunityScorer` is kept completely intact and
+    functional — flip `scoring_backend` back to `"llm"` to restore
+    previous behaviour unchanged.
+  - **Expected latency difference**: The LLM path makes one external API
+    call per opportunity (sequential with semaphore), typically 1–5 s per
+    call → 5–25 s for 5 opportunities. The embedding path loads the model
+    once (a few seconds on first import, cached thereafter) then computes
+    all scores locally with sub-second total latency for any batch size.
+    Users will perceive the pipeline as finishing nearly instantly once
+    scoring begins.
+  - Tests: `tests/services/test_embedding_scorer.py` — 30 tests covering
+    `_cosine_sim_to_score` calibration (extremes, midpoint, low/high sim,
+    monotonicity), `_build_profile_text` (empty, full), `_extract_skills`
+    (known, compound, case-insensitive, empty), integration tests with
+    real model (matching > unrelated, all fields returned, required/
+    missing skill extraction, `score_and_save` updates opportunity,
+    `score_multiple_and_save` sorts descending, empty profile, empty list,
+    pros includes matched skills and target company, cons lists missing
+    skills), and factory switching (default returns embedding, config-
+    driven `"llm"` returns `OpportunityScorer`, env-var override).
+
+- **Optional LLM narrative enrichment for embedding scorer (opt-in, off
+  by default)**: ``EmbeddingOpportunityScorer`` (from P28) produces
+  summary/pros/cons/ranking_explanation via fixed templates, which is
+  functionally complete but reads mechanically.  This adds an optional
+  enrichment pass that takes the already-computed structured output
+  (relevance_score, required_skills, missing_skills — all correct and
+  cheap) and makes exactly one short LLM call per opportunity to rewrite
+  only the text fields into more natural prose.  If the call fails the
+  template text is kept; the pipeline never breaks.
+  - ``core/config/settings.py`` — ``narrative_enrichment_enabled: bool =
+    Field(default=False)`` on ``AISettings`` (off by default since P28's
+    purpose was removing the LLM dependency).  Configurable via
+    ``OOS_AI__NARRATIVE_ENRICHMENT_ENABLED=true``.
+  - **Enrichment prompt** provides the ALREADY-COMPUTED score, skills,
+    title, and description, and asks only for natural summary/pros/cons/
+    ranking_explanation text consistent with those given facts — the LLM
+    is never asked to re-derive the score or skills.
+  - **``score_opportunity``** (single-opportunity path): calls
+    ``_enrich_single()`` which makes one ``generate_with_fallback`` call
+    (reusing the existing OpenRouter→Groq→Gemini chain).  On parse
+    failure or exception, logs a warning and returns ``None``; the caller
+    keeps template text.
+  - **``score_multiple_and_save``** (pipeline path): computes all
+    template scores first, then calls ``_enrich_batch()`` which makes
+    ONE LLM call for the entire batch (prompt includes all titles,
+    scores, and skills).  Falls back to template text if the batch
+    response cannot be parsed or the call raises.
+  - **``score_and_save``**: enrichment path both updates the returned
+    ``ScoredOpportunity`` and the ``Opportunity`` DB object.
+  - Score, skills, and ``application_deadline`` are NEVER modified by
+    enrichment — only summary, pros, cons, and ranking_explanation may
+    be overwritten.
+  - Tests: 21 new tests across ``TestParseEnrichmentResponse`` (7 cases:
+    single valid/invalid/code-fence JSON, batch valid/wrong-type/missing-
+    field), ``TestBuildEnrichmentBatchItems`` (single + multiple items),
+    ``TestApplyEnrichment`` (overwrites text, preserves score/skills,
+    None safe), and ``TestEnrichmentFlow`` (disabled-by-default never
+    calls AI, enabled+succeeding overwrites text, enabled+failing
+    exception falls back, enabled+bad-parse falls back, enriched
+    ``score_and_save`` updates opportunity object, batch enrichment
+    overwrites all items, batch failure falls back).
+
+- **BackendManager — frontend now starts and owns the backend process**:
+  The backend (uvicorn serving ``backend.main:app``) was previously
+  started only via a manual dev script.  The frontend was auto-launched
+  on Windows login (via ``frontend/utils/startup.py`` registering
+  ``python -m frontend.main`` in ``HKCU\...\Run``) but the backend was
+  never registered anywhere, so every API call failed on reboot and the
+  entire daily-search-window + digest-email scheduling pipeline (owned by
+  ``backend/main.py``'s ``lifespan()``) never ran unattended.  This was a
+  fundamental bug — not cosmetic, the core automated pipeline was dead on
+  any cold boot.
+  - ``frontend/backend_manager.py`` — new ``BackendManager`` class:
+    ``is_backend_healthy()`` does a quick ``GET /api/v1/health`` with a
+    2-second timeout (no raise).  ``start_backend()`` spawns a detached
+    ``uvicorn`` child process via ``subprocess.Popen`` with
+    ``CREATE_NO_WINDOW`` on Windows and redirects stdout/stderr to
+    ``{logs_dir}/backend.log`` for diagnostics.  ``ensure_backend_running()``
+    checks health first (no spawn if already healthy), starts the backend
+    if needed, then polls every 0.5 s for up to 15 s waiting for it to
+    bind.  ``stop_backend()`` terminates gracefully (5s wait then kill)
+    but only if *this instance* started the process — never kills a
+    pre-existing manually-launched backend.
+  - ``frontend/main.py`` startup: before constructing the ``MainWindow``,
+    shows a frameless ``QSplashScreen``-style dialog with an indeterminate
+    progress bar and "Starting OpportunityOS..." message, then calls
+    ``ensure_backend_running()``.  If the backend fails to start within the
+    timeout, a clean error dialog is shown with the log file path before
+    proceeding into a degraded (offline) app state.
+  - ``frontend/main.py`` shutdown: after ``app.exec()`` returns,
+    ``manager.stop_backend()`` is called.  The tray's Quit action
+    (``_on_quit`` → ``MainWindow.quit_application``) also calls
+    ``app.quit()`` to actually exit the event loop (a pre-existing bug:
+    ``setQuitOnLastWindowClosed(False)`` meant the Quit action closed the
+    window but the process kept running).
+  - Effect: the frontend is already registered for Windows auto-start; it
+    now transitively brings up the backend too, every time — boot, manual
+    launch, or post-crash restart.  The scheduler and digest pipeline are
+    no longer silently dead on reboot.
+  - Tests: ``tests/frontend/test_backend_manager.py`` — 17 tests covering
+    health-check (200, 500, connection error, timeout), ``start_backend``
+    (verifies command line, no double-spawn), ``ensure_backend_running``
+    (already-healthy skips spawn, starts-and-returns-True, timeout-returns-
+    False, process-exits-early-returns-False, process-not-leaked),
+    ``stop_backend`` (non-owner untouched, already-exited no-op, graceful
+    terminate, kill-after-timeout), and constructor (default/custom port).
+
+- **Plugins now actually connected to the live search flow**: The 9 bundled
+  finder plugins (internships, jobs, research_papers, grants, hackathons,
+  conferences, competitions, startup_hiring, scholarships) were fully built
+  with `pyproject.toml` entry points declared but were never discovered at
+  runtime — nothing called `importlib.metadata.entry_points()` to load them.
+  - `plugins/loader.py` — new module with `discover_entry_point_classes()`
+    (uses `importlib.metadata.entry_points(group="opportunityos.plugins")`,
+    falls back to the hardcoded `ALL_BUNDLED_PLUGINS` list when not installed
+    editable) and `load_bundled_plugins(enabled_plugins)` which instantiates
+    and initialises the filtered set.
+  - `SearchExecutor` now loads plugin `SearchProvider` instances and runs
+    each query through both the primary provider AND every enabled plugin's
+    provider, collecting results with cross-provider URL dedup. This means
+    every pipeline run automatically fetches domain-specialized results
+    (internship listings, research papers, grants, etc.) alongside general
+    job-board results.
+  - `PipelineConfig` gains an `enabled_plugins: list[str] | None` field
+    (default `None` = all discovered plugins active).
+  - **Semantics**: empty `enabled_plugins` = all enabled (opt-out model for
+    bundled first-party plugins). Set a non-empty list to restrict to specific
+    plugins by `plugin_name`.
+
+- **SearchExecutor now persists Search rows per query**: Each query run
+  through the search provider during a pipeline execution creates a new
+  `Search` row via `SearchRepository` with `query`, `user_id`,
+  `result_count` (per-query, before cross-query dedup), and `last_run_at`.
+  Failed queries still create a row with `result_count=0`. This populates
+  the dashboard's `total_searches`, `today_searches`, and "Recent Searches"
+  table. Event-log semantics — re-running the same query text creates a new
+  row each time (correctly counting toward "today" on the day it runs).
+
+- **P15 — Multi-profile support**: Users can now create up to 5 profiles
+  (e.g. "R&D Track", "AI/ML Track") for different job search tracks.
+  - `Profile` model: dropped `unique=True` on `user_id` (now one-to-many),
+    added `name: str` field (default "Profile 1") as a user-given label,
+    added non-unique index on `user_id`.
+  - `Opportunity` model: added nullable `profile_id` FK to `profiles.id`
+    for per-profile opportunity scoping going forward.
+  - `ProfileRepository`: added `list_by_user_id()`, `count_by_user_id()`,
+    and documented that `get_by_user_id()` now returns the oldest profile.
+  - New endpoints:
+    - `GET /users/{user_id}/profiles` — list all profiles for a user
+    - `POST /profiles` — create profile (enforces 5-profile cap, 409 if exceeded)
+    - `GET /profiles/id/{profile_id}` — fetch by profile id
+    - `PUT /profiles/id/{profile_id}` — update by profile id
+    - `DELETE /profiles/id/{profile_id}` — delete by profile id (blocks deleting last profile)
+  - Deprecated but retained old `/profiles/{user_id}` routes for backward compat.
+  - `POST /pipeline/run` now takes `profile_id` instead of `user_id` and
+    resolves the profile directly; 404 if not found (no more auto-create-default).
+  - `GET /opportunities` accepts optional `profile_id` filter.
+  - `opportunity_creator.py` sets `profile_id` on new opportunities.
+  - Tests: `tests/backend/test_profiles.py` covers 5-profile cap, listing,
+    profile_id CRUD, last-profile deletion guard. `tests/database/test_profile_repository.py`
+    covers new repo methods.
+
+### Fixed
+
+- **Migration 010 broken on fresh SQLite — unnamed UNIQUE constraint drop failed**:
+  Migration `010_multi_profile.py` called
+  `batch_op.drop_constraint("uq_profiles_user_id", type_="unique")` but the
+  original constraint in migration 001 was created as
+  `sa.UniqueConstraint("user_id")` with no explicit name. On SQLite this
+  constraint has no stored name, so Alembic's batch mode could not find it
+  by the guessed name and raised `ValueError`. Anyone cloning the repo fresh
+  and running `alembic upgrade head` would hit this failure.
+  - **Fix**: Added `naming_convention={"uq": "uq_%(table_name)s_%(column_0_N_name)s"}`
+    to the `batch_alter_table` call for the `profiles` table. This is Alembic's
+    documented pattern for dropping unnamed constraints on SQLite — the naming
+    convention assigns a predictable name during reflection so that
+    `drop_constraint` matches correctly. Also added `recreate="always"` for
+    explicitness (SQLite already requires batch recreate, but this makes the
+    intent clear).
+  - Also moved the `opportunities` table changes (add `profile_id` column, FK,
+    index) into a `batch_alter_table` context, since `op.create_foreign_key`
+    fails on SQLite outside batch mode (`NotImplementedError: No support for
+    ALTER of constraints in SQLite dialect`).
+  - Both `upgrade()` and `downgrade()` now use `batch_alter_table` with
+    `recreate="always"` for both `profiles` and `opportunities`.
+
+- **Migration 005 downgrade failed — index not dropped before column**:
+  `005_add_notification_fields.py:downgrade()` called
+  `op.drop_column("notifications", "digest_id")` but the column had an
+  associated index `ix_notifications_digest_id` (created by `index=True` in
+  the upgrade). On SQLite, `ALTER TABLE ... DROP COLUMN` checks that no
+  indexes reference the column; the operation failed with
+  `OperationalError: error in index ix_notifications_digest_id after drop
+  column: no such column: digest_id`. Fixed by adding
+  `op.drop_index("ix_notifications_digest_id", table_name="notifications")`
+  before the `drop_column` call. (Discovered by the new
+  `test_migration_chain.py` test which runs the complete downgrade chain.)
+
+- **`.env.example` drift — missing Notifications, Scheduler, Memory, Plugins vars**:
+  `.env.example` was missing the entire Notifications section (`OOS_NOTIFICATIONS__*`),
+  the Memory and Plugins sections, and about a dozen
+  `OOS_BACKGROUND_SCHEDULER__*` vars (digest sub-task, pipeline tuning knobs,
+  master switches). Also fixed `OOS_AI__OLLAMA__BASE_URL` → `OOS_AI__OLLAMA_BASE_URL`
+  (double `__` would map to a non-existent `ai.ollama.base_url`). Full cross-check
+  against `get_config()` usage confirmed no stale entries in the example file beyond
+  the Ollama naming bug. See `.env.example` for the complete list.
+
+### Removed
+
+- **`scripts/fix_profile_unique.py` and `scripts/migrate_profile.py`** — these
+  raw SQLite scripts were manual workarounds for the same migration 010 bug
+  described above. With the fixed migration handling the constraint drop
+  correctly end-to-end via Alembic batch mode, these scripts are no longer
+  needed and have been deleted.
+
+- **P14 — AI fallback chain: openrouter → groq → gemini → fail (no dummy/mock)**:
+  Corrected the automatic fallback chain used by query generation and opportunity
+  scoring. Previously the chain was hardcoded as `["groq", "openrouter"]` in two
+  separate places (query_generator.py and scorer.py) with duplicated, buggy logic
+  that reused the original provider's model name when switching to a fallback
+  provider — breaking the fallback call itself. The fix:
+  1. **`AIRegistry.default()`** now registers every real provider whose key/config
+     is present (Gemini, OpenAI, Ollama, OpenRouter, Groq) instead of only
+     OpenRouter and Groq. No dummy/mock provider is ever registered.
+  2. **`AISettings.fallback_providers`** added to `core/config/settings.py` with
+     default `["groq", "gemini"]`, making the full chain
+     `openrouter (default_provider) → groq → gemini → fail`. Configurable via
+     `OOS_AI__FALLBACK_PROVIDERS` (comma-separated or JSON array).
+  3. **`services/ai/fallback.py`** — new shared `generate_with_fallback()` helper
+     used by both query_generator.py and scorer.py, eliminating duplicated inline
+     fallback logic. Critical fix: when calling a fallback provider, a fresh
+     `ModelConfig` is built using that provider's own `default_model` property
+     (added to `AIProvider` ABC and implemented on every provider class) instead
+     of reusing the original model string.
+  4. **`AIProvider.default_model`** abstract property added to the ABC and
+     implemented on all five provider classes (Gemini: `gemini-2.0-flash`, Groq:
+     `llama-3.3-70b-versatile`, OpenRouter: `meta-llama/llama-3.3-70b-instruct:free`,
+     OpenAI: `gpt-4o-mini`, Ollama: `llama3.2`).
+  5. **`backend/api/v1/endpoints/settings.py`** — removed the hardcoded `"dummyai"`
+     entry from `_build_configuration_status()`; added `"groq"` to `_INTEGRATIONS`
+     and `_is_configured()`.
+  6. **Tests**: `tests/services/test_ai_fallback.py` covers primary-succeeds,
+     primary-fails-groq-succeeds (with model verification), primary-and-groq-fail-
+     gemini-succeeds, all-three-fail (with all error messages), no-openai/ollama/
+     dummy attempted, deduplication, and unregistered-provider-skipped. Existing
+     tests updated to mock `generate_with_fallback` instead of relying on the
+     removed `dummyai` provider.
+
+### Added
+
+- **`tests/database/test_migration_chain.py` — full migration chain integration test**:
+  Runs `alembic upgrade head` against a fresh temp SQLite database file from
+  migration 001 all the way through 010, then `alembic downgrade base`, then
+  `alembic upgrade head` again. Verifies the complete cycle succeeds and that
+  migration 010's schema changes (no UNIQUE on profiles.user_id,
+  `ix_profiles_user_id` index, `name` column, `profile_id` column on
+  opportunities) are all present. This test would have caught the original
+  migration 010 bug on fresh databases.
+
+- **LaTeX resume parsing support**: `services/resume_parser/file_reader.py` now
+  handles `.tex` files via new `read_tex()` function. Uses `pylatexenc` library
+  for robust LaTeX-to-plain-text conversion — stripping preamble commands,
+  formatting macros, comments, and environments while preserving section headers
+  and bullet content. The `read_resume_file()` dispatcher now accepts `.tex`
+  alongside `.pdf` and `.docx`. The `POST /api/v1/resume/parse` endpoint allows
+  `.tex` uploads. Dependencies: `pylatexenc>=3.10` added to `pyproject.toml`.
+   Tests: `tests/services/test_file_reader.py` covers `read_tex()` output quality
+   and command stripping; `tests/backend/test_resume.py` covers end-to-end `.tex`
+   parsing and section detection via the API.
+
+- **P17 — Multi-profile frontend (switcher + form widget)**: The Profile page
+  (`frontend/pages/profile.py`) was fully redesigned to support the multi-profile
+  backend from P15/P16. Key changes:
+  - **Profile switcher**: Horizontal scrollable card strip at page top showing up
+    to 5 profile cards (name + subtitle derived from bio/skills/location). Each
+    card has a delete (×) button with confirm-before-delete dialog. A "+ New
+    Profile" card at the end of the strip is disabled with a tooltip when the
+    user has reached 5 profiles.
+  - **Empty state**: When the user has zero profiles, the page shows two large
+    choice buttons — "Upload Resume" and "Fill Manually" — instead of an empty
+    switcher strip.
+  - **Choice dialog**: Clicking "+ New Profile" opens a clear two-button choice:
+    "Upload Resume" (opens file picker restricted to .pdf/.docx/.tex, calls
+    `POST /resume/parse`, pre-fills the form for review before saving) vs "Fill
+    Manually" (opens an empty form, user fills and saves).
+  - **ProfileForm widget** (`frontend/widgets/profile_form.py`): New reusable
+    form widget covering every `Profile` model field: name (profile label),
+    display_name, bio, education (repeatable rows), experience (repeatable rows),
+    projects (repeatable rows), skills (tag/chip input), preferred_locations,
+    salary_expectations, target_companies, keywords, linkedin_url, github_url,
+    portfolio. Used for both create (`POST /profiles`) and edit (`PUT
+    /profiles/id/{profile_id}`) modes. An `on_saved` callback notifies the
+    page to refresh the profile list after a successful save.
+  - **Profile selection**: Clicking an existing profile card loads it into the
+    form in edit mode. Active profile is highlighted with a left accent border.
+  - Tests: `tests/frontend/test_profile_page.py` covers form structure,
+    populate/collect/clear, new-profile-card limit gating (disabled at 5),
+    empty state visibility, switcher rendering with profiles, profile selection,
+    profile deletion from list, and upload-resume parse-then-fill flow.
+
 - **P13 — UI for manual digest trigger and email testing**: Added two new buttons to
   the Notifications page (`frontend/pages/notifications.py`):
   1. **"Send Digest Now"** button (green): Calls `POST /notifications/digest/trigger`
@@ -67,9 +486,15 @@ All notable changes to this project will be documented in this file.
   Fixed by:
   1. Changing the default model to `"meta-llama/llama-3.3-70b-instruct:free"`,
      a confirmed real and available free model on OpenRouter.
-  2. Replacing the hardcoded list with a live-fetch mechanism
+  2. Replacing the hardcoded static list with a live-fetch mechanism
      (`_fetch_free_models()`) that queries OpenRouter's `/models` API endpoint,
      filters for models ending in `:free`, and caches the result for 1 hour.
+     `supported_models` is now an `async` method (instead of a sync `@property`)
+     that delegates to `_fetch_free_models()`. The `AIProvider` ABC and all
+     six concrete provider classes (OpenRouter, Gemini, Groq, OpenAI, Ollama,
+     Dummy) were updated to make `supported_models` an `async def` method.
+     `AIRegistry.models()` is also `async` now, and the `GET /ai/providers`
+     endpoint awaits it.
   3. Adding a minimal verified fallback list
      (`_get_fallback_models()`) for robustness when the API is unreachable;
      this list contains only models confirmed to be real and free as of

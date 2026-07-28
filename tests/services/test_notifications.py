@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from core.config import AppConfig
 from database.models.notifications import Notification
+from database.models.users import User
 from database.repositories.notification_repository import NotificationRepository
 from services.notifications import (
     DailyDigestService,
@@ -22,13 +23,24 @@ from services.notifications import (
 )
 
 
+# ── helpers ──────────────────────────────────────────────────────────
+
+
+def _user(db_session: Session) -> uuid.UUID:
+    """Create a minimal User row and return its id."""
+    uid = uuid.uuid4()
+    db_session.add(User(id=uid, email=f"{uid}@test.com", password_hash="test-hash"))
+    db_session.commit()
+    return uid
+
+
 # ── NotificationService ──────────────────────────────────────────────
 
 
 class TestNotificationService:
     def test_create_notification(self, db_session: Session) -> None:
         svc = NotificationService(db_session)
-        uid = uuid.uuid4()
+        uid = _user(db_session)
         notif = svc.create_notification(
             user_id=uid,
             type_="test",
@@ -46,8 +58,9 @@ class TestNotificationService:
 
     def test_create_notification_with_metadata(self, db_session: Session) -> None:
         svc = NotificationService(db_session)
+        uid = _user(db_session)
         notif = svc.create_notification(
-            user_id=uuid.uuid4(),
+            user_id=uid,
             type_="scored",
             title="Opportunity Scored",
             metadata={"score": 85, "tags": ["python", "backend"]},
@@ -57,7 +70,7 @@ class TestNotificationService:
 
     def test_send_notification_creates_record(self, db_session: Session) -> None:
         svc = NotificationService(db_session)
-        uid = uuid.uuid4()
+        uid = _user(db_session)
         notif = svc.send_notification(
             user_id=uid,
             type_="desktop_test",
@@ -70,12 +83,12 @@ class TestNotificationService:
 
     def test_get_notifications_empty(self, db_session: Session) -> None:
         svc = NotificationService(db_session)
-        items = svc.get_notifications(uuid.uuid4())
+        items = svc.get_notifications(_user(db_session))
         assert items == []
 
     def test_get_notifications_with_data(self, db_session: Session) -> None:
         svc = NotificationService(db_session)
-        uid = uuid.uuid4()
+        uid = _user(db_session)
         svc.create_notification(uid, "info", "First")
         svc.create_notification(uid, "info", "Second")
         items = svc.get_notifications(uid)
@@ -83,7 +96,7 @@ class TestNotificationService:
 
     def test_get_notifications_unread_only(self, db_session: Session) -> None:
         svc = NotificationService(db_session)
-        uid = uuid.uuid4()
+        uid = _user(db_session)
         n1 = svc.create_notification(uid, "info", "Read this")
         svc.create_notification(uid, "info", "Unread")
         svc.mark_as_read(n1.id)
@@ -93,7 +106,7 @@ class TestNotificationService:
 
     def test_get_notifications_filter_channel(self, db_session: Session) -> None:
         svc = NotificationService(db_session)
-        uid = uuid.uuid4()
+        uid = _user(db_session)
         svc.create_notification(uid, "info", "In-app", channel="in_app")
         svc.create_notification(uid, "info", "Desktop", channel="desktop")
         items = svc.get_notifications(uid, channel="desktop")
@@ -102,7 +115,7 @@ class TestNotificationService:
 
     def test_get_notifications_pagination(self, db_session: Session) -> None:
         svc = NotificationService(db_session)
-        uid = uuid.uuid4()
+        uid = _user(db_session)
         for i in range(10):
             svc.create_notification(uid, "info", f"Notif {i}")
         items = svc.get_notifications(uid, limit=3, offset=0)
@@ -113,7 +126,7 @@ class TestNotificationService:
 
     def test_count_unread(self, db_session: Session) -> None:
         svc = NotificationService(db_session)
-        uid = uuid.uuid4()
+        uid = _user(db_session)
         assert svc.count_unread(uid) == 0
         svc.create_notification(uid, "info", "Unread 1")
         svc.create_notification(uid, "info", "Unread 2")
@@ -126,7 +139,7 @@ class TestNotificationService:
 
     def test_mark_as_read(self, db_session: Session) -> None:
         svc = NotificationService(db_session)
-        uid = uuid.uuid4()
+        uid = _user(db_session)
         notif = svc.create_notification(uid, "info", "Mark me")
         assert notif.is_read is False
         updated = svc.mark_as_read(notif.id)
@@ -136,7 +149,7 @@ class TestNotificationService:
 
     def test_mark_all_as_read(self, db_session: Session) -> None:
         svc = NotificationService(db_session)
-        uid = uuid.uuid4()
+        uid = _user(db_session)
         svc.create_notification(uid, "info", "A")
         svc.create_notification(uid, "info", "B")
         svc.create_notification(uid, "info", "C")
@@ -146,7 +159,7 @@ class TestNotificationService:
 
     def test_get_total_count(self, db_session: Session) -> None:
         svc = NotificationService(db_session)
-        uid = uuid.uuid4()
+        uid = _user(db_session)
         assert svc.get_total_count(uid) == 0
         svc.create_notification(uid, "info", "X")
         svc.create_notification(uid, "info", "Y")
@@ -224,14 +237,14 @@ class TestEmailNotificationProvider:
 class TestDailyDigestService:
     def test_run_empty_returns_zero(self, db_session: Session) -> None:
         svc = DailyDigestService(db_session)
-        result = svc.run(uuid.uuid4())
+        result = svc.run(_user(db_session))
         assert result["notifications_count"] == 0
         assert result["email_sent"] is False
         assert result["digest_id"] is None
 
     def test_run_creates_digest(self, db_session: Session) -> None:
         svc = NotificationService(db_session)
-        uid = uuid.uuid4()
+        uid = _user(db_session)
         svc.create_notification(uid, "info", "Unread A")
         svc.create_notification(uid, "warning", "Unread B")
 
@@ -254,7 +267,7 @@ class TestDailyDigestService:
 
     def test_run_with_email(self, db_session: Session) -> None:
         svc = NotificationService(db_session)
-        uid = uuid.uuid4()
+        uid = _user(db_session)
         svc.create_notification(uid, "info", "Digest item")
 
         email_mock = MagicMock()
@@ -280,7 +293,7 @@ class TestDailyDigestService:
     def test_email_sends_regardless_of_include_unread_only_setting(self, db_session: Session) -> None:
         """Test that include_unread_only doesn't gate email sending."""
         svc = NotificationService(db_session)
-        uid = uuid.uuid4()
+        uid = _user(db_session)
         svc.create_notification(uid, "info", "Digest item")
 
         email_mock = MagicMock()
@@ -300,7 +313,7 @@ class TestDailyDigestService:
         import json
 
         svc = NotificationService(db_session)
-        uid = uuid.uuid4()
+        uid = _user(db_session)
         
         # Create an opportunity notification with metadata
         metadata = {
@@ -340,7 +353,7 @@ class TestDailyDigestService:
     def test_digest_respects_include_unread_only_for_query(self, db_session: Session) -> None:
         """Test that include_unread_only still affects which notifications are queried for digest content."""
         svc = NotificationService(db_session)
-        uid = uuid.uuid4()
+        uid = _user(db_session)
         
         # Create multiple notifications
         n1 = svc.create_notification(uid, "info", "Unread notification")

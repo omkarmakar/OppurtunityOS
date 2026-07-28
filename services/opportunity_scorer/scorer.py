@@ -13,6 +13,7 @@ from database.models.opportunities import Opportunity
 from database.models.profiles import Profile
 from database.session import SessionLocal
 from services.ai import AIRegistry, AIResponse, ModelConfig
+from services.ai.fallback import generate_with_fallback
 
 SCORE_SYSTEM_PROMPT = """You are an expert career opportunity analyst. Given a user's profile and job opportunity, perform deep semantic analysis to evaluate match quality.
 
@@ -144,6 +145,7 @@ class OpportunityScorer:
         self._provider_name = provider_name or cfg.ai.default_provider
         self._model_name = model_name or cfg.ai.default_model
         self._registry = AIRegistry.default()
+        self._fallback_providers = cfg.ai.fallback_providers
 
     async def score_opportunity(
         self,
@@ -163,51 +165,20 @@ Opportunity:
 
 Score this opportunity against the user's profile. Return valid JSON only."""
 
-        provider = None
-        model_name = self._model_name
-        provider_name = self._provider_name
-        original_provider = self._provider_name
-
-        # Try to get the requested provider first
-        try:
-            provider = self._registry.get(self._provider_name)
-        except Exception:
-            pass
-
-        # If that fails, try fallback providers: groq, then openrouter
-        if not provider:
-            fallback_order = ["groq", "openrouter"]
-            for fallback_name in fallback_order:
-                try:
-                    provider = self._registry.get(fallback_name)
-                    break
-                except Exception:
-                    pass
-
-        if not provider:
-            raise ValueError(f"No AI provider available. Requested: {original_provider}")
-
-        config = ModelConfig(model=model_name, temperature=0.3, max_tokens=2048)
+        config = ModelConfig(model=self._model_name, temperature=0.3, max_tokens=2048)
 
         messages = [
             {"role": "system", "content": SCORE_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ]
 
-        try:
-            response: AIResponse = await provider.generate(messages, config)
-        except Exception as e:
-            # If primary provider fails, fall back to groq
-            if provider_name != "groq":
-                try:
-                    provider = self._registry.get("groq")
-                    provider_name = "groq"
-                    config = ModelConfig(model=model_name, temperature=0.3, max_tokens=2048)
-                    response: AIResponse = await provider.generate(messages, config)
-                except Exception as groq_error:
-                    raise ValueError(f"Primary provider '{original_provider}' failed: {e}. Fallback Groq also failed: {groq_error}") from e
-            else:
-                raise ValueError(f"Scoring failed with provider '{original_provider}': {e}") from e
+        response, _used_provider = await generate_with_fallback(
+            registry=self._registry,
+            primary_provider=self._provider_name,
+            messages=messages,
+            config=config,
+            fallback_providers=self._fallback_providers,
+        )
 
         result = self._parse_response(response.content)
 

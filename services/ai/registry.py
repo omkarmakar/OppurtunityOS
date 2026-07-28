@@ -33,18 +33,25 @@ class AIRegistry:
     def list(self) -> list[str]:
         return list(self._providers)
 
-    def models(self) -> dict[str, list[str]]:
-        return {name: p.supported_models for name, p in self._providers.items()}
+    async def models(self) -> dict[str, list[str]]:
+        result: dict[str, list[str]] = {}
+        for name, p in self._providers.items():
+            result[name] = await p.supported_models()
+        return result
 
     @classmethod
     def default(cls) -> AIRegistry:
         registry = cls()
         cfg = get_config()
-        
-        # Register real providers only with fallback chain: OpenRouter → Groq
+
+        # Register every real provider whose key/config is present.
+        # Missing keys are logged and skipped — never register a dummy/mock provider.
         provider_specs: list[tuple[str, type[AIProvider], dict[str, str]]] = [
             ("openrouter", OpenRouterProvider, {"api_key": cfg.ai.openrouter_api_key}),
             ("groq", GroqProvider, {"api_key": cfg.ai.groq_api_key}),
+            ("gemini", GeminiProvider, {"api_key": cfg.ai.gemini_api_key}),
+            ("openai", OpenAIProvider, {"api_key": cfg.ai.openai_api_key}),
+            ("ollama", OllamaProvider, {"base_url": cfg.ai.ollama_base_url}),
         ]
 
         for name, provider_cls, kwargs in provider_specs:

@@ -37,6 +37,9 @@ RED = "#ef4444"
 API_BASE = "http://127.0.0.1:8000/api/v1"
 
 
+ALL_PROFILES_TOKEN = "__all__"
+
+
 class PipelineWorker(QObject):
     finished = Signal(object)
     error = Signal(str)
@@ -59,6 +62,62 @@ class PipelineWorker(QObject):
                 self.error.emit(msg)
         except Exception as exc:
             self.error.emit(str(exc))
+
+
+class MultiPipelineWorker(QObject):
+    finished = Signal(object)
+    error = Signal(str)
+
+    def __init__(self, base_params: dict[str, Any], profile_ids: list[str]) -> None:
+        super().__init__()
+        self._base_params = base_params
+        self._profile_ids = profile_ids
+
+    def run(self) -> None:
+        aggregated: dict[str, Any] = {
+            "success": True,
+            "multi_pipeline": True,
+            "pipelines_run": len(self._profile_ids),
+            "queries_generated": [],
+            "search_results_count": 0,
+            "pages_extracted": 0,
+            "opportunities_created": 0,
+            "opportunities_skipped_duplicate": 0,
+            "opportunities_scored": 0,
+            "notifications_sent": 0,
+            "per_profile": [],
+            "errors": [],
+        }
+        for pid in self._profile_ids:
+            params = {**self._base_params, "profile_id": pid}
+            try:
+                resp = httpx.post(f"{API_BASE}/pipeline/run", params=params, timeout=300)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("success"):
+                        aggregated["queries_generated"].extend(data.get("queries_generated", []))
+                        aggregated["search_results_count"] += data.get("search_results_count", 0)
+                        aggregated["pages_extracted"] += data.get("pages_extracted", 0)
+                        aggregated["opportunities_created"] += data.get("opportunities_created", 0)
+                        aggregated["opportunities_skipped_duplicate"] += data.get("opportunities_skipped_duplicate", 0)
+                        aggregated["opportunities_scored"] += data.get("opportunities_scored", 0)
+                        aggregated["notifications_sent"] += data.get("notifications_sent", 0)
+                        aggregated["per_profile"].append({"profile_id": pid, "status": "ok"})
+                    else:
+                        aggregated["errors"].append({"profile_id": pid, "error": data.get("error", "unknown")})
+                        aggregated["per_profile"].append({"profile_id": pid, "status": "error"})
+                else:
+                    aggregated["errors"].append({"profile_id": pid, "error": f"HTTP {resp.status_code}"})
+                    aggregated["per_profile"].append({"profile_id": pid, "status": "error"})
+            except Exception as exc:
+                aggregated["errors"].append({"profile_id": pid, "error": str(exc)})
+                aggregated["per_profile"].append({"profile_id": pid, "status": "error"})
+
+        if aggregated["errors"] and aggregated["search_results_count"] == 0:
+            aggregated["success"] = False
+            aggregated["error"] = f"{len(aggregated['errors'])} of {len(self._profile_ids)} pipelines failed"
+
+        self.finished.emit(aggregated)
 
 
 class SearchPage(PageWidget):
@@ -147,6 +206,29 @@ class SearchPage(PageWidget):
         """)
         provider_row.addWidget(self._provider_combo)
         card_layout.addLayout(provider_row)
+
+        profile_row = QHBoxLayout()
+        profile_row.setSpacing(12)
+        plbl = QLabel("Profile")
+        plbl.setStyleSheet(f"font-size: 13px; font-weight: 500; color: {TEXT_BRIGHT}; background: transparent;")
+        profile_row.addWidget(plbl)
+        profile_row.addStretch()
+        self._profile_combo = QComboBox()
+        self._profile_combo.setMinimumWidth(200)
+        self._profile_combo.setStyleSheet(f"""
+            QComboBox {{
+                background-color: #2a2a44; color: {TEXT_BRIGHT}; border: none;
+                border-radius: 6px; padding: 6px 12px; font-size: 12px;
+            }}
+            QComboBox:hover {{ background-color: #3a3a5e; }}
+            QComboBox::drop-down {{ border: none; width: 20px; }}
+            QComboBox QAbstractItemView {{
+                background-color: #1a1a2e; color: {TEXT_BRIGHT};
+                selection-background-color: {ACCENT};
+            }}
+        """)
+        profile_row.addWidget(self._profile_combo)
+        card_layout.addLayout(profile_row)
 
         spin_row = QHBoxLayout()
         spin_row.setSpacing(24)
@@ -310,6 +392,10 @@ class SearchPage(PageWidget):
         self._last_run_card.hide()
         self._main_layout.addWidget(self._last_run_card)
 
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._load_providers()
+
     def _load_providers(self) -> None:
         try:
             if not self.isWidgetType() and not self.isWindow():
@@ -319,15 +405,42 @@ class SearchPage(PageWidget):
         try:
             resp = httpx.get(f"{API_BASE}/search-providers", timeout=10)
             resp.raise_for_status()
-            # Filter to only show tavily
             all_providers = [p["name"] for p in resp.json()]
             self._provider_names = [name for name in all_providers if name.lower() == "tavily"]
+            self._provider_combo.clear()
             for name in self._provider_names:
                 self._provider_combo.addItem(name)
         except Exception:
+            self._provider_combo.clear()
             self._provider_combo.addItem("tavily")
             self._provider_names = ["tavily"]
         self._load_latest_run()
+        self._load_profiles()
+
+    def _load_profiles(self) -> None:
+        try:
+            if not self.isWidgetType() and not self.isWindow():
+                return
+        except RuntimeError:
+            return
+        try:
+            resp = httpx.get(
+                f"{API_BASE}/users/{get_active_user_id()}/profiles",
+                timeout=10,
+            )
+            resp.raise_for_status()
+            profiles = resp.json()
+            self._profile_combo.clear()
+            if profiles:
+                self._profile_combo.addItem(
+                    f"All Profiles ({len(profiles)} slots)", ALL_PROFILES_TOKEN,
+                )
+            for p in profiles:
+                label = p.get("name", "Unnamed")
+                self._profile_combo.addItem(label, p.get("id"))
+        except Exception:
+            self._profile_combo.clear()
+            self._profile_combo.addItem("No profiles available", None)
 
     def _load_latest_run(self) -> None:
         try:
@@ -355,18 +468,37 @@ class SearchPage(PageWidget):
         self._results_card.hide()
         self._progress.show()
 
-        params = {
-            "user_id": get_active_user_id(),
+        profile_id = self._profile_combo.currentData()
+        if not profile_id:
+            self._on_error("No profile selected. Create a profile first.")
+            return
+
+        base_params = {
             "search_provider": self._provider_combo.currentText().lower(),
             "max_queries": self._queries_spin.value(),
             "max_results": self._results_spin.value(),
             "skip_ranking": self._skip_rank_check.isChecked(),
         }
 
-        self._thread = QThread()
-        self._worker = PipelineWorker(params)
-        self._worker.moveToThread(self._thread)
-        self._thread.started.connect(self._worker.run)
+        if profile_id == ALL_PROFILES_TOKEN:
+            profile_ids = [
+                self._profile_combo.itemData(i)
+                for i in range(self._profile_combo.count())
+                if self._profile_combo.itemData(i) and self._profile_combo.itemData(i) != ALL_PROFILES_TOKEN
+            ]
+            if not profile_ids:
+                self._on_error("No individual profiles available.")
+                return
+            self._thread = QThread()
+            self._worker = MultiPipelineWorker(base_params, profile_ids)
+            self._worker.moveToThread(self._thread)
+            self._thread.started.connect(self._worker.run)
+        else:
+            base_params["profile_id"] = profile_id
+            self._thread = QThread()
+            self._worker = PipelineWorker(base_params)
+            self._worker.moveToThread(self._thread)
+            self._thread.started.connect(self._worker.run)
 
         self._worker.finished.connect(self._on_success)
         self._worker.error.connect(self._on_error)
@@ -390,36 +522,60 @@ class SearchPage(PageWidget):
         self._show_error(msg)
 
     def _show_success(self, data: dict[str, Any]) -> None:
+        is_multi = data.get("multi_pipeline", False)
+
         self._results_icon.setText("")
-        self._results_title.setText("Search Complete")
-        self._results_title.setStyleSheet(f"font-size: 16px; font-weight: 600; color: {GREEN}; background: transparent;")
+        if is_multi:
+            self._results_title.setText("Multi-Pipeline Search Complete")
+            self._results_title.setStyleSheet(f"font-size: 16px; font-weight: 600; color: {GREEN}; background: transparent;")
+        else:
+            self._results_title.setText("Search Complete")
+            self._results_title.setStyleSheet(f"font-size: 16px; font-weight: 600; color: {GREEN}; background: transparent;")
 
         self._clear_body()
         
-        # Queries section
-        queries = data.get("queries_generated", [])
-        if queries:
-            queries_label = QLabel("Search Queries Generated:")
-            queries_label.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {TEXT_MUTED}; background: transparent;")
-            self._results_body.addWidget(queries_label)
-            
-            for i, query in enumerate(queries, 1):
-                query_item = QLabel(f"{i}. {query}")
-                query_item.setWordWrap(True)
-                query_item.setStyleSheet(f"font-size: 11px; color: {TEXT_BRIGHT}; background: transparent; margin-left: 12px; padding: 4px 0;")
-                self._results_body.addWidget(query_item)
-            
-            self._results_body.addSpacing(8)
-        
+        # Queries section (for single profile searches)
+        if not is_multi:
+            queries = data.get("queries_generated", [])
+            if queries:
+                queries_label = QLabel("Search Queries Generated:")
+                queries_label.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {TEXT_MUTED}; background: transparent;")
+                self._results_body.addWidget(queries_label)
+                
+                for i, query in enumerate(queries, 1):
+                    query_item = QLabel(f"{i}. {query}")
+                    query_item.setWordWrap(True)
+                    query_item.setStyleSheet(f"font-size: 11px; color: {TEXT_BRIGHT}; background: transparent; margin-left: 12px; padding: 4px 0;")
+                    self._results_body.addWidget(query_item)
+                
+                self._results_body.addSpacing(8)
+
         # Statistics fields
-        fields = [
-            ("Search Results Found", str(data.get("search_results_count", 0))),
-            ("Pages Extracted", str(data.get("pages_extracted", 0))),
-            ("Opportunities Created", str(data.get("opportunities_created", 0))),
-            ("Opportunities Skipped (Duplicates)", str(data.get("opportunities_skipped_duplicate", 0))),
-            ("Opportunities Scored", str(data.get("opportunities_scored", 0))),
-            ("Notifications Sent", str(data.get("notifications_sent", 0))),
-        ]
+        if is_multi:
+            fields = [
+                ("Pipelines Run", str(data.get("pipelines_run", 0))),
+                ("Total Search Results", str(data.get("search_results_count", 0))),
+                ("Total Pages Extracted", str(data.get("pages_extracted", 0))),
+                ("Total Opportunities Created", str(data.get("opportunities_created", 0))),
+                ("Duplicates Skipped", str(data.get("opportunities_skipped_duplicate", 0))),
+                ("Opportunities Scored", str(data.get("opportunities_scored", 0))),
+                ("Notifications Sent", str(data.get("notifications_sent", 0))),
+            ]
+            per_profile = data.get("per_profile", [])
+            if per_profile:
+                ok_count = sum(1 for p in per_profile if p["status"] == "ok")
+                err_count = sum(1 for p in per_profile if p["status"] == "error")
+                fields.append(("Profiles Succeeded", str(ok_count)))
+                fields.append(("Profiles Failed", str(err_count)))
+        else:
+            fields = [
+                ("Search Results Found", str(data.get("search_results_count", 0))),
+                ("Pages Extracted", str(data.get("pages_extracted", 0))),
+                ("Opportunities Created", str(data.get("opportunities_created", 0))),
+                ("Opportunities Skipped (Duplicates)", str(data.get("opportunities_skipped_duplicate", 0))),
+                ("Opportunities Scored", str(data.get("opportunities_scored", 0))),
+                ("Notifications Sent", str(data.get("notifications_sent", 0))),
+            ]
         for label, value in fields:
             row = QHBoxLayout()
             lbl = QLabel(f"{label}:")

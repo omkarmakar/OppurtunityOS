@@ -59,7 +59,13 @@ class NotificationRepository(BaseRepository[Notification]):
         self._session.flush()
         return result.rowcount
 
-    def list_unread_by_channel(self, user_id: uuid.UUID, channel: str, limit: int = 50) -> list[Notification]:
+    def list_unread_by_channel(
+        self,
+        user_id: uuid.UUID,
+        channel: str,
+        limit: int = 50,
+        profile_id: uuid.UUID | None = None,
+    ) -> list[Notification]:
         stmt = (
             select(Notification)
             .where(
@@ -70,6 +76,10 @@ class NotificationRepository(BaseRepository[Notification]):
             .order_by(Notification.created_at.desc())
             .limit(limit)
         )
+        if profile_id is not None:
+            stmt = stmt.where(Notification.profile_id == profile_id)
+        else:
+            stmt = stmt.where(Notification.profile_id.is_(None))
         return list(self._session.scalars(stmt).all())
 
     def list_by_digest(self, digest_id: uuid.UUID) -> list[Notification]:

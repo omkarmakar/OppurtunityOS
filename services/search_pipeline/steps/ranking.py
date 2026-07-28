@@ -1,4 +1,4 @@
-"""Pipeline step — AI-ranks opportunities against the user profile."""
+"""Pipeline step — ranks opportunities against the user profile."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from database.models.opportunities import Opportunity
-from services.opportunity_scorer import OpportunityScorer
+from services.opportunity_scorer import create_opportunity_scorer
 from services.search_pipeline.steps.base import PipelineStep
 
 logger = logging.getLogger(__name__)
@@ -22,9 +22,7 @@ class AIRankingStep(PipelineStep):
         model: str = "",
     ) -> None:
         self._db = db
-        self._provider = provider
-        self._model = model
-        self._scorer = OpportunityScorer(
+        self._scorer = create_opportunity_scorer(
             provider_name=provider or None,
             model_name=model or None,
         )

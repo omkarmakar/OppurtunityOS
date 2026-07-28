@@ -31,11 +31,23 @@ class DailyDigestService:
         self._email = email_provider
         self._settings = settings or DigestSettings()
 
-    def run(self, user_id: uuid.UUID, user_email: str = "") -> dict[str, Any]:
-        """Create a digest of unread notifications for the given user."""
+    def run(
+        self,
+        user_id: uuid.UUID,
+        profile_id: uuid.UUID | None = None,
+        profile_name: str = "",
+        user_email: str = "",
+    ) -> dict[str, Any]:
+        """Create a digest of unread notifications for the given user and profile.
+
+        When ``profile_id`` is provided only notifications scoped to that
+        profile are included.  The profile name appears in the email subject
+        so multiple per-profile digests are distinguishable at a glance.
+        """
         unread = self._repo.list_unread_by_channel(
             user_id, "in_app",
             limit=self._settings.max_opportunities,
+            profile_id=profile_id,
         )
         if not unread:
             return {"notifications_count": 0, "email_sent": False, "digest_id": None}
@@ -45,6 +57,7 @@ class DailyDigestService:
 
         digest_notif = Notification(
             user_id=user_id,
+            profile_id=profile_id,
             type_="digest",
             title="Daily Digest",
             message=summary["text"],
@@ -60,9 +73,14 @@ class DailyDigestService:
 
         email_sent = False
         if self._email and user_email:
+            subject = (
+                f"OpportunityOS Digest — {profile_name} — {len(unread)} new opportunities"
+                if profile_name
+                else f"Daily Digest — {len(unread)} new notification(s)"
+            )
             email_sent = self._email.send(
                 str(user_id),
-                f"Daily Digest — {len(unread)} new notification(s)",
+                subject,
                 summary["text"],
                 email_to=user_email,
             )

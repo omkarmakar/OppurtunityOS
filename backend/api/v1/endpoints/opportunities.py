@@ -25,6 +25,7 @@ VALID_STATUSES = frozenset({"new", "reviewed", "applied", "interview", "rejected
 @router.get("/opportunities", response_model=OpportunityListResponse)
 def list_opportunities(
     user_id: UUID = Query(..., description="User ID"),
+    profile_id: UUID | None = Query(None, description="Optional profile ID filter"),
     status_filter: str | None = Query(None, alias="status", description="Filter by status"),
     min_score: float | None = Query(None, ge=0, le=100, description="Minimum relevance score"),
     sort_by: str = Query("score", pattern="^(score|date)$"),
@@ -33,6 +34,8 @@ def list_opportunities(
     db: Session = Depends(get_db),
 ) -> OpportunityListResponse:
     query = db.query(Opportunity).filter(Opportunity.user_id == user_id)
+    if profile_id:
+        query = query.filter(Opportunity.profile_id == profile_id)
 
     if status_filter:
         query = query.filter(Opportunity.status == status_filter)

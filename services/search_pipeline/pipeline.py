@@ -20,7 +20,10 @@ from services.search_pipeline.steps.base import PipelineStep
 from services.search_pipeline.steps.content_extractor import ContentExtractorStep
 from services.search_pipeline.steps.notifier import NotifierStep
 from services.search_pipeline.steps.opportunity_creator import OpportunityCreator
-from services.search_pipeline.steps.query_generator import QueryGenerator
+from services.search_pipeline.steps.query_generator import (
+    QueryGenerator,
+    create_query_generator,
+)
 from services.search_pipeline.steps.ranking import AIRankingStep
 from services.search_pipeline.steps.search_executor import SearchExecutor
 
@@ -41,6 +44,9 @@ class PipelineConfig:
     search_result_count: int = 10
     ai_ranking_provider: str = ""
     ai_ranking_model: str = ""
+
+    # Plugin integration
+    enabled_plugins: list[str] | None = None
 
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -80,10 +86,11 @@ class SearchPipeline:
 
         if self._config.query_generator_enabled:
             self._steps.append(
-                QueryGenerator(
+                create_query_generator(
                     provider=self._config.query_generator_provider,
                     model=self._config.query_generator_model,
                     query_count=self._config.query_count,
+                    enabled_plugins=self._config.enabled_plugins,
                 )
             )
 
@@ -92,6 +99,7 @@ class SearchPipeline:
                 SearchExecutor(
                     provider_name=self._config.search_provider,
                     result_count=self._config.search_result_count,
+                    enabled_plugins=self._config.enabled_plugins,
                 )
             )
 

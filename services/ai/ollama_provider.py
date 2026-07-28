@@ -19,7 +19,10 @@ class OllamaProvider(AIProvider):
         return "Ollama"
 
     @property
-    def supported_models(self) -> list[str]:
+    def default_model(self) -> str:
+        return "llama3.2"
+
+    async def supported_models(self) -> list[str]:
         return [
             "llama3.2",
             "llama3.1",
@@ -56,7 +59,10 @@ class OllamaProvider(AIProvider):
                 json=body,
                 timeout=300,
             )
-            resp.raise_for_status()
+            if not resp.is_success:
+                error_body = resp.json() if resp.text else {}
+                error_msg = error_body.get("error", "") or resp.text[:200]
+                raise ValueError(f"Ollama API error ({resp.status_code}): {error_msg}")
             data = resp.json()
 
         return AIResponse(

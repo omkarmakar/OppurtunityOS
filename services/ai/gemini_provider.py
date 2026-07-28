@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import httpx
 
 from services.ai.models import AIResponse, ModelConfig
@@ -19,7 +21,10 @@ class GeminiProvider(AIProvider):
         return "Gemini"
 
     @property
-    def supported_models(self) -> list[str]:
+    def default_model(self) -> str:
+        return "gemini-2.0-flash"
+
+    async def supported_models(self) -> list[str]:
         return [
             "gemini-2.0-flash",
             "gemini-2.0-flash-lite",
@@ -34,9 +39,9 @@ class GeminiProvider(AIProvider):
     ) -> AIResponse:
         cfg = config or ModelConfig()
 
-        gemini_contents = self._convert_messages(messages)
+        system_instruction, gemini_contents = self._convert_messages(messages)
 
-        body = {
+        body: dict[str, Any] = {
             "contents": gemini_contents,
             "generationConfig": {
                 "temperature": cfg.temperature,
@@ -44,6 +49,10 @@ class GeminiProvider(AIProvider):
                 "topP": cfg.top_p,
             },
         }
+        if system_instruction:
+            body["system_instruction"] = {
+                "parts": [{"text": system_instruction}]
+            }
 
         url = f"{GEMINI_BASE_URL}/models/{cfg.model}:generateContent"
 
@@ -54,7 +63,14 @@ class GeminiProvider(AIProvider):
                 timeout=120,
                 headers={"x-goog-api-key": self._api_key},
             )
-            resp.raise_for_status()
+            if not resp.is_success:
+                error_body = resp.json() if resp.text else {}
+                error_msg = (
+                    error_body.get("error", {}).get("message", "")
+                    or error_body.get("error", {}).get("status", "")
+                    or resp.text[:200]
+                )
+                raise ValueError(f"Gemini API error ({resp.status_code}): {error_msg}")
             data = resp.json()
 
         candidate = data["candidates"][0]
@@ -73,19 +89,18 @@ class GeminiProvider(AIProvider):
 
     def _convert_messages(
         self, messages: list[dict[str, str]]
-    ) -> list[dict]:
+    ) -> tuple[str | None, list[dict]]:
+        system_parts: list[str] = []
         contents: list[dict] = []
         for msg in messages:
             role = msg["role"]
             if role == "system":
-                contents.append({
-                    "role": "user",
-                    "parts": [{"text": f"[System instruction]: {msg['content']}"}],
-                })
+                system_parts.append(msg["content"])
             else:
                 gemini_role = "model" if role == "assistant" else "user"
                 contents.append({
                     "role": gemini_role,
                     "parts": [{"text": msg["content"]}],
                 })
-        return contents
+        system_instruction = "\n".join(system_parts) if system_parts else None
+        return system_instruction, contents

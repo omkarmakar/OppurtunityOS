@@ -6,23 +6,32 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, Uuid, func
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database.base import Base
 
 if TYPE_CHECKING:
+    from database.models.notifications import Notification
+    from database.models.scheduler_state import SchedulerState
     from database.models.users import User
 
 
 class Profile(Base):
     __tablename__ = "profiles"
 
+    __table_args__ = (
+        Index("ix_profiles_user_id", "user_id"),
+    )
+
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid, primary_key=True, default=uuid.uuid4,
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False,
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=False,
+    )
+    name: Mapped[str] = mapped_column(
+        String(100), default="Profile 1", nullable=False,
     )
     display_name: Mapped[Optional[str]] = mapped_column(
         String(100), nullable=True,
@@ -72,6 +81,18 @@ class Profile(Base):
     preferences: Mapped[Optional[dict[str, Any]]] = mapped_column(
         JSON, nullable=True,
     )
+    raw_extracted_text: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True,
+    )
+    resume_filename: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True,
+    )
+    resume_uploaded_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+    remote_preference: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False,
     )
@@ -80,5 +101,11 @@ class Profile(Base):
     )
 
     user: Mapped[User] = relationship(
-        "User", back_populates="profile",
+        "User", back_populates="profiles",
+    )
+    scheduler_states: Mapped[list[SchedulerState]] = relationship(
+        "SchedulerState", back_populates="profile", cascade="all, delete-orphan",
+    )
+    notifications: Mapped[list[Notification]] = relationship(
+        "Notification", back_populates="profile", cascade="all, delete-orphan",
     )

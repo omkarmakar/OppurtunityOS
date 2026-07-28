@@ -81,6 +81,7 @@ _INTEGRATIONS: list[tuple[str, str, str]] = [
     ("openai", "OOS_AI__OPENAI_API_KEY", "Get a key at https://platform.openai.com/api-keys"),
     ("gemini", "OOS_AI__GEMINI_API_KEY", "Get a key at https://aistudio.google.com/apikey"),
     ("openrouter", "OOS_AI__OPENROUTER_API_KEY", "Get a key at https://openrouter.ai/settings/keys"),
+    ("groq", "OOS_AI__GROQ_API_KEY", "Get a key at https://console.groq.com/keys"),
     ("ollama", "", "No API key needed — set OOS_AI__OLLAMA_BASE_URL if not at localhost:11434"),
 ]
 
@@ -90,12 +91,6 @@ def _build_configuration_status(cfg: AppConfig) -> list[IntegrationStatus]:
     for name, env_var, hint in _INTEGRATIONS:
         configured = _is_configured(name, cfg)
         result.append(IntegrationStatus(name=name, configured=configured, env_var=env_var, hint=hint))
-    result.append(IntegrationStatus(
-        name="dummyai",
-        configured=True,
-        env_var="",
-        hint="Built-in fallback provider — always available, no API key needed",
-    ))
     return result
 
 
@@ -108,6 +103,8 @@ def _is_configured(name: str, cfg: AppConfig) -> bool:
         return bool(cfg.ai.gemini_api_key)
     if name == "openrouter":
         return bool(cfg.ai.openrouter_api_key)
+    if name == "groq":
+        return bool(cfg.ai.groq_api_key)
     if name == "ollama":
         return True
     return False

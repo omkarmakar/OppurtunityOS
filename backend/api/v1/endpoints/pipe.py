@@ -9,9 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.api.deps import get_db
-from database.models.profiles import Profile
 from database.repositories.profile_repository import ProfileRepository
-from database.repositories.user_repository import UserRepository
 from services.search_pipeline import PipelineConfig, PipelineResult, SearchPipeline
 
 router = APIRouter()
@@ -31,7 +29,7 @@ class PipelineResponse(BaseModel):
 
 @router.post("/pipeline/run", response_model=PipelineResponse)
 async def run_pipeline(
-    user_id: UUID = Query(description="User ID to run pipeline for"),
+    profile_id: UUID = Query(description="Profile ID to run pipeline for"),
     search_provider: str = Query(default="tavily", description="Search provider name"),
     max_queries: int = Query(default=5, ge=1, le=20, description="Max search queries"),
     max_results: int = Query(default=10, ge=1, le=50, description="Max results per query"),
@@ -39,21 +37,12 @@ async def run_pipeline(
     db: Session = Depends(get_db),
 ) -> PipelineResponse:
     profile_repo = ProfileRepository(db)
-    profile = profile_repo.get_by_user_id(user_id)
+    profile = profile_repo.get(profile_id)
     if not profile:
-        # Auto-create a default profile for the user if none exists yet
-        # so the search pipeline can run without requiring prior setup.
-        user_repo = UserRepository(db)
-        user_repo.get_or_create(user_id)
-        profile = Profile(
-            user_id=user_id,
-            display_name="Default Profile",
-            skills=["Software Engineer", "Python", "Developer"],
-            keywords=["developer", "python", "software", "remote"],
+        raise HTTPException(
+            status_code=404,
+            detail=f"Profile with id '{profile_id}' not found",
         )
-        profile_repo.add(profile)
-        db.commit()
-        db.refresh(profile)
 
     config = PipelineConfig(
         query_count=max_queries,

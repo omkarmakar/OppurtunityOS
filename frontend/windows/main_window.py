@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QSize
-from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QStackedWidget, QStatusBar, QWidget
+from PySide6.QtWidgets import QApplication, QHBoxLayout, QMainWindow, QStackedWidget, QStatusBar, QWidget
 
 from core.config import get_config
 from frontend.pages.bookmarks import BookmarksPage
@@ -109,6 +109,9 @@ class MainWindow(QMainWindow):
         """Force-close the window and exit the process."""
         self._force_close = True
         self.close()
+        app = QApplication.instance()
+        if app:
+            app.quit()
 
     def _navigate(self, index: int) -> None:
         if 0 <= index < self._stack.count():

@@ -5,7 +5,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func as sa_func
+from sqlalchemy import exists, func as sa_func
 from sqlalchemy.orm import Session, joinedload
 
 from backend.api.deps import get_db
@@ -106,21 +106,31 @@ def delete_bookmark(
 @router.get("/bookmarks", response_model=BookmarkListResponse)
 def list_bookmarks(
     user_id: UUID = Query(..., description="User ID"),
+    profile_id: UUID | None = Query(None, description="Optional profile ID filter"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     db: Session = Depends(get_db),
 ) -> BookmarkListResponse:
-    total = (
-        db.query(sa_func.count(Bookmark.id))
-        .filter(Bookmark.user_id == user_id)
-        .scalar() or 0
-    )
-
-    offset = (page - 1) * page_size
-    rows = (
+    total_query = db.query(sa_func.count(Bookmark.id)).filter(Bookmark.user_id == user_id)
+    rows_query = (
         db.query(Bookmark)
         .options(joinedload(Bookmark.opportunity))
         .filter(Bookmark.user_id == user_id)
+    )
+
+    if profile_id:
+        profile_filter = exists().where(
+            Opportunity.id == Bookmark.opportunity_id,
+            Opportunity.profile_id == profile_id,
+        )
+        total_query = total_query.filter(profile_filter)
+        rows_query = rows_query.filter(profile_filter)
+
+    total = total_query.scalar() or 0
+
+    offset = (page - 1) * page_size
+    rows = (
+        rows_query
         .order_by(Bookmark.created_at.desc())
         .offset(offset)
         .limit(page_size)

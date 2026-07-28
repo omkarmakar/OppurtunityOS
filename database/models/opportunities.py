@@ -13,6 +13,7 @@ from database.base import Base
 
 if TYPE_CHECKING:
     from database.models.bookmarks import Bookmark
+    from database.models.profiles import Profile
     from database.models.sources import Source
     from database.models.users import User
 
@@ -35,6 +36,9 @@ class Opportunity(Base):
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+    profile_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        Uuid, ForeignKey("profiles.id", ondelete="SET NULL"), nullable=True, index=True,
     )
     source_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         Uuid, ForeignKey("sources.id", ondelete="SET NULL"), nullable=True,
