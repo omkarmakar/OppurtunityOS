@@ -988,10 +988,6 @@ class ProfilePage(PageWidget):
     def _load_profile(self) -> None:
         uid = self._get_user_id()
         if not uid:
-=======
-        except httpx.HTTPError as e:
-            QMessageBox.critical(self, "Error", f"Parse failed:\n{e}")
->>>>>>> origin/main
             return
 
         partial: dict[str, Any] = {}
