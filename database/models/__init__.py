@@ -13,6 +13,7 @@ from database.models.profiles import Profile
 from database.models.scheduler_state import SchedulerState
 from database.models.searches import Search
 from database.models.sources import Source
+from database.models.user_preferences import UserPreferences
 from database.models.users import User
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "Search",
     "Source",
     "User",
+    "UserPreferences",
 ]
