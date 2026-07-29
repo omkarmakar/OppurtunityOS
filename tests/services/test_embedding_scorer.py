@@ -106,20 +106,18 @@ class TestScoredOpportunity:
 class TestCosineSimToScore:
     def test_extremes(self) -> None:
         assert _cosine_sim_to_score(-1.0) == 0
-        assert _cosine_sim_to_score(1.0) == 100
+        assert _cosine_sim_to_score(1.0) >= 95
 
     def test_midpoint(self) -> None:
-        # At sim=0.35 the sigmoid output is 0.5 → 50
-        score = _cosine_sim_to_score(0.35)
+        # At sim=0.50 the sigmoid output is 0.5 → 50
+        score = _cosine_sim_to_score(0.50)
         assert 40 <= score <= 60
 
     def test_low_sim(self) -> None:
-        # sim=0.0 → sigmoid( -3.5 ) ≈ 0.029 → score ≈ 3
         score = _cosine_sim_to_score(0.0)
         assert score <= 10
 
     def test_high_sim(self) -> None:
-        # sim=0.8 → sigmoid( 4.5 ) ≈ 0.989 → score ≈ 99
         score = _cosine_sim_to_score(0.8)
         assert score >= 90
 

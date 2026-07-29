@@ -34,6 +34,7 @@ async def run_pipeline(
     max_queries: int = Query(default=5, ge=1, le=20, description="Max search queries"),
     max_results: int = Query(default=10, ge=1, le=50, description="Max results per query"),
     skip_ranking: bool = Query(default=False, description="Skip AI ranking step"),
+    include_jobboards: bool = Query(default=True, description="Also search LinkedIn/Naukri/Unstop"),
     db: Session = Depends(get_db),
 ) -> PipelineResponse:
     profile_repo = ProfileRepository(db)
@@ -44,9 +45,12 @@ async def run_pipeline(
             detail=f"Profile with id '{profile_id}' not found",
         )
 
+    secondary = ["jobboards"] if include_jobboards else None
+
     config = PipelineConfig(
         query_count=max_queries,
         search_provider=search_provider,
+        search_secondary_providers=secondary,
         search_result_count=max_results,
         ai_ranking_enabled=not skip_ranking,
     )

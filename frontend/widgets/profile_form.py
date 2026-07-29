@@ -36,21 +36,22 @@ class TagInput(QWidget):
         self._tags: list[str] = []
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        layout.setSpacing(2)
 
         input_row = QHBoxLayout()
         self._input = QLineEdit()
         self._input.setPlaceholderText("Type and press Enter...")
         self._input.returnPressed.connect(self._add_tag)
         add_btn = QPushButton("+")
-        add_btn.setFixedWidth(32)
+        add_btn.setFixedWidth(28)
         add_btn.clicked.connect(self._add_tag)
         input_row.addWidget(self._input, 1)
         input_row.addWidget(add_btn)
         layout.addLayout(input_row)
 
         self._list = QListWidget()
-        self._list.setMaximumHeight(120)
+        self._list.setMaximumHeight(80)
+        self._list.setStyleSheet("QListWidget { font-size: 11px; }")
         layout.addWidget(self._list)
 
     def _add_tag(self) -> None:
@@ -100,52 +101,48 @@ class TargetingForm(QWidget):
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(16)
+        layout.setSpacing(10)
 
-        self._build_name(layout)
-        self._build_locations(layout)
-        self._build_remote_and_salary(layout)
-        self._build_companies(layout)
         self._build_save_button(layout)
-        layout.addStretch(1)
+
+        row1 = QHBoxLayout()
+        row1.setSpacing(10)
+        self._build_name_inline(row1)
+        self._build_remote_inline(row1)
+        self._build_salary_inline(row1)
+        layout.addLayout(row1)
+
+        self._build_locations(layout)
+        self._build_companies(layout)
 
     def _field_card(self, title: str) -> tuple[QFrame, QVBoxLayout]:
         card = QFrame()
         card.setObjectName("targetFieldCard")
         card.setStyleSheet(card_frame_stylesheet("targetFieldCard"))
         card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(16, 12, 16, 12)
-        card_layout.setSpacing(6)
+        card_layout.setContentsMargins(12, 8, 12, 8)
+        card_layout.setSpacing(4)
         label = QLabel(title)
-        label.setStyleSheet(muted_label_stylesheet(size=12, weight=600))
+        label.setStyleSheet(muted_label_stylesheet(size=11, weight=600))
         card_layout.addWidget(label)
         return card, card_layout
 
-    def _build_name(self, parent_layout: QVBoxLayout) -> None:
+    def _build_name_inline(self, parent_layout: QHBoxLayout) -> None:
         card, cl = self._field_card("Slot Name")
         self._name = QLineEdit()
-        self._name.setPlaceholderText("e.g. R&D Track, AI/ML Track")
+        self._name.setPlaceholderText("e.g. R&D Track")
         cl.addWidget(self._name)
-        parent_layout.addWidget(card)
+        parent_layout.addWidget(card, 2)
 
-    def _build_locations(self, parent_layout: QVBoxLayout) -> None:
-        card, cl = self._field_card("Preferred Locations")
-        self._locations = TagInput()
-        cl.addWidget(self._locations)
-        parent_layout.addWidget(card)
-
-    def _build_remote_and_salary(self, parent_layout: QVBoxLayout) -> None:
-        row = QHBoxLayout()
-        row.setSpacing(16)
-
-        remote_card, remote_cl = self._field_card("Remote Preference")
+    def _build_remote_inline(self, parent_layout: QHBoxLayout) -> None:
+        card, cl = self._field_card("Remote")
         self._remote = QComboBox()
         self._remote.addItems(["", "remote", "hybrid", "on-site"])
         self._remote.setStyleSheet(f"""
             QComboBox {{
                 background-color: #222238; color: {TEXT_BRIGHT};
                 border: 1px solid {BORDER_SUBTLE}; border-radius: 6px;
-                padding: 6px 12px; font-size: 12px;
+                padding: 4px 8px; font-size: 12px;
             }}
             QComboBox:hover {{ background-color: #2c2c48; }}
             QComboBox QAbstractItemView {{
@@ -153,34 +150,41 @@ class TargetingForm(QWidget):
                 selection-background-color: {ACCENT};
             }}
         """)
-        remote_cl.addWidget(self._remote)
-        row.addWidget(remote_card, 1)
+        cl.addWidget(self._remote)
+        parent_layout.addWidget(card, 1)
 
-        salary_card, salary_cl = self._field_card("Salary Expectations")
+    def _build_salary_inline(self, parent_layout: QHBoxLayout) -> None:
+        card, cl = self._field_card("Salary")
         self._salary = QLineEdit()
         self._salary.setPlaceholderText("e.g. 120k-150k")
-        salary_cl.addWidget(self._salary)
-        row.addWidget(salary_card, 1)
+        cl.addWidget(self._salary)
+        parent_layout.addWidget(card, 1)
 
-        parent_layout.addLayout(row)
+    def _build_locations(self, parent_layout: QVBoxLayout) -> None:
+        card, cl = self._field_card("Preferred Locations")
+        self._locations = TagInput()
+        self._locations.setMaximumHeight(100)
+        cl.addWidget(self._locations)
+        parent_layout.addWidget(card)
 
     def _build_companies(self, parent_layout: QVBoxLayout) -> None:
         card, cl = self._field_card("Target Companies")
         self._companies = TagInput()
+        self._companies.setMaximumHeight(100)
         cl.addWidget(self._companies)
         parent_layout.addWidget(card)
 
     def _build_save_button(self, parent_layout: QVBoxLayout) -> None:
         btn_row = QHBoxLayout()
-        btn_row.setContentsMargins(0, 8, 0, 0)
+        btn_row.setContentsMargins(0, 0, 0, 4)
         btn_row.addStretch()
-        self._save_btn = QPushButton("Save Targeting")
+        self._save_btn = QPushButton("Save Profile")
         self._save_btn.setObjectName("primaryButton")
         self._save_btn.setStyleSheet(f"""
             QPushButton#primaryButton {{
                 background-color: {ACCENT}; color: white; border: none;
-                border-radius: 8px; padding: 10px 24px;
-                font-size: 14px; font-weight: 700;
+                border-radius: 6px; padding: 7px 20px;
+                font-size: 13px; font-weight: 700;
             }}
             QPushButton#primaryButton:hover {{ background-color: #6d28d9; }}
         """)

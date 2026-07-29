@@ -41,6 +41,7 @@ class PipelineConfig:
     query_generator_model: str = ""
     query_count: int = 5
     search_provider: str = "dummy"
+    search_secondary_providers: list[str] | None = None
     search_result_count: int = 10
     ai_ranking_provider: str = ""
     ai_ranking_model: str = ""
@@ -100,6 +101,7 @@ class SearchPipeline:
                     provider_name=self._config.search_provider,
                     result_count=self._config.search_result_count,
                     enabled_plugins=self._config.enabled_plugins,
+                    secondary_providers=self._config.search_secondary_providers,
                 )
             )
 

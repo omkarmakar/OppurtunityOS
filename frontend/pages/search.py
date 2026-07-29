@@ -406,7 +406,7 @@ class SearchPage(PageWidget):
             resp = httpx.get(f"{API_BASE}/search-providers", timeout=10)
             resp.raise_for_status()
             all_providers = [p["name"] for p in resp.json()]
-            self._provider_names = [name for name in all_providers if name.lower() == "tavily"]
+            self._provider_names = [name for name in all_providers if name.lower() not in ("dummy",)]
             self._provider_combo.clear()
             for name in self._provider_names:
                 self._provider_combo.addItem(name)
@@ -478,6 +478,7 @@ class SearchPage(PageWidget):
             "max_queries": self._queries_spin.value(),
             "max_results": self._results_spin.value(),
             "skip_ranking": self._skip_rank_check.isChecked(),
+            "include_jobboards": True,
         }
 
         if profile_id == ALL_PROFILES_TOKEN:

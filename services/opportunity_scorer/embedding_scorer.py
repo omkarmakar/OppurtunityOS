@@ -149,8 +149,14 @@ def _build_opportunity_text(title: str, description: str | None = None) -> str:
 
 
 def _cosine_sim_to_score(sim: float) -> int:
-    calibrated = 1.0 / (1.0 + math.exp(-10.0 * (sim - 0.35)))
-    return int(round(max(0.0, min(100.0, calibrated * 100.0))))
+    # Center sigmoid at 0.5 (require genuine semantic similarity for high scores)
+    # Slope of 8 gives a gradual curve — scores below 0.3 stay low, above 0.7 climb fast
+    calibrated = 1.0 / (1.0 + math.exp(-8.0 * (sim - 0.50)))
+    # Floor: if cosine similarity is below 0.1, cap score at 5 (near-zero match)
+    raw = calibrated * 100.0
+    if sim < 0.10:
+        raw = min(raw, 5.0)
+    return int(round(max(0.0, min(100.0, raw))))
 
 
 def _extract_skills_from_text(text: str, vocab: frozenset[str]) -> list[str]:

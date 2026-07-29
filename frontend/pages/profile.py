@@ -362,7 +362,7 @@ class ProfilePage(PageWidget):
         self._content_area.setStyleSheet("background: transparent;")
         self._content_layout = QVBoxLayout(self._content_area)
         self._content_layout.setContentsMargins(0, 0, 0, 0)
-        self._content_layout.setSpacing(20)
+        self._content_layout.setSpacing(12)
         scroll.setWidget(self._content_area)
         self._content_area.setVisible(False)
         layout.addWidget(scroll, 1)
@@ -531,7 +531,45 @@ class ProfilePage(PageWidget):
         self._content_layout.addWidget(targeting_header)
 
         self._targeting_form = TargetingForm()
+        self._targeting_form._save_btn.clicked.disconnect()
+        self._targeting_form._save_btn.clicked.connect(self._on_targeting_save)
         self._content_layout.addWidget(self._targeting_form)
+
+        # Action buttons row
+        btn_row = QHBoxLayout()
+        btn_row.setContentsMargins(0, 16, 0, 0)
+        btn_row.setSpacing(12)
+
+        self._back_btn = QPushButton("Back to Slots")
+        self._back_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {BG_ELEVATED}; color: {TEXT_BRIGHT};
+                border: 1px solid {BORDER_SUBTLE}; border-radius: 8px;
+                padding: 10px 20px; font-size: 13px; font-weight: 600;
+            }}
+            QPushButton:hover {{
+                border-color: {ACCENT_LIGHT};
+                background-color: {ACCENT_MUTED_BG};
+            }}
+        """)
+        self._back_btn.clicked.connect(self._on_back_to_slots)
+        btn_row.addWidget(self._back_btn)
+
+        btn_row.addStretch(1)
+
+        self._delete_btn = QPushButton("Delete Profile")
+        self._delete_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #7f1d1d; color: #fca5a5; border: none;
+                border-radius: 8px; padding: 10px 20px;
+                font-size: 13px; font-weight: 600;
+            }}
+            QPushButton:hover {{ background-color: #991b1b; color: white; }}
+        """)
+        self._delete_btn.clicked.connect(self._on_delete_profile)
+        btn_row.addWidget(self._delete_btn)
+
+        self._content_layout.addLayout(btn_row)
 
         self._content_layout.addStretch(1)
 
@@ -656,8 +694,80 @@ class ProfilePage(PageWidget):
         if self._targeting_form:
             self._targeting_form.set_slot_id(slot_id)
             self._targeting_form.populate(data)
+        if hasattr(self, "_delete_btn"):
+            self._delete_btn.setVisible(True)
+        if hasattr(self, "_back_btn"):
+            self._back_btn.setVisible(False)
 
     # ── callbacks ────────────────────────────────────────────────────────
+
+    def _on_targeting_save(self) -> None:
+        if not self._targeting_form:
+            return
+        data = self._targeting_form.collect()
+        if not data.get("name"):
+            QMessageBox.warning(self, "Validation", "Slot name is required.")
+            return
+
+        try:
+            if self._targeting_form.get_slot_id():
+                resp = httpx.put(
+                    f"{API_BASE}/profiles/id/{self._targeting_form.get_slot_id()}",
+                    json=data, timeout=10,
+                )
+                resp.raise_for_status()
+                saved = resp.json()
+                self._targeting_form.populate(saved)
+                QMessageBox.information(self, "Saved", "Profile updated.")
+            else:
+                data["user_id"] = get_active_user_id()
+                resp = httpx.post(
+                    f"{API_BASE}/profiles",
+                    json=data, timeout=10,
+                )
+                resp.raise_for_status()
+                saved = resp.json()
+                self._targeting_form.set_slot_id(saved.get("id"))
+                self._targeting_form.populate(saved)
+                self._active_slot_id = saved.get("id")
+                self._fetch_slots()
+                if hasattr(self, "_delete_btn"):
+                    self._delete_btn.setVisible(True)
+                if hasattr(self, "_back_btn"):
+                    self._back_btn.setVisible(False)
+                QMessageBox.information(self, "Created", "New profile created.")
+        except httpx.HTTPError as e:
+            QMessageBox.critical(self, "Error", f"Failed to save:\n{e}")
+
+    def _on_back_to_slots(self) -> None:
+        self._fetch_slots()
+
+    def _on_delete_profile(self) -> None:
+        slot_id = self._targeting_form.get_slot_id() if self._targeting_form else None
+        if not slot_id:
+            return
+        confirm = QMessageBox.question(
+            self, "Delete Profile",
+            "Are you sure you want to delete this profile?\nThis cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            resp = httpx.delete(f"{API_BASE}/profiles/id/{slot_id}", timeout=10)
+            if resp.status_code == 204:
+                self._on_slot_deleted(slot_id)
+                QMessageBox.information(self, "Deleted", "Profile deleted.")
+            else:
+                detail = ""
+                try:
+                    detail = resp.json().get("detail", "")
+                except Exception:
+                    pass
+                QMessageBox.warning(self, "Error", f"Delete failed: {detail or resp.status_code}")
+        except httpx.HTTPError as e:
+            QMessageBox.critical(self, "Error", f"Failed to delete:\n{e}")
 
     def _on_slot_selected(self, slot_id: str) -> None:
         if slot_id == self._active_slot_id:
@@ -868,115 +978,6 @@ class ProfilePage(PageWidget):
         row.addWidget(save_btn)
         parent_layout.addLayout(row)
 
-    # ── education / experience dialogs ─────────────────────────────────
-
-    def _show_entry_dialog(
-        self, title: str, fields: list[tuple[str, str]],
-    ) -> dict[str, str] | None:
-        dialog = QWidget(None, Qt.WindowType.Dialog)
-        dialog.setWindowTitle(title)
-        dialog.setMinimumWidth(400)
-        dialog.setStyleSheet("""
-            QWidget {
-                background-color: #1a1a2e;
-                color: #e4e4f0;
-                font-size: 13px;
-            }
-            QLineEdit {
-                padding: 6px 10px;
-                border: 1px solid #2a2a44;
-                border-radius: 6px;
-                background-color: #0f0f1a;
-                color: #e4e4f0;
-            }
-            QLineEdit:focus { border-color: #7c3aed; }
-            QPushButton {
-                padding: 6px 16px;
-                border: none;
-                border-radius: 6px;
-                font-weight: 600;
-                color: #e4e4f0;
-            }
-        """)
-        layout = QVBoxLayout(dialog)
-        form = QFormLayout()
-        widgets: dict[str, QLineEdit] = {}
-        for label, placeholder in fields:
-            le = QLineEdit()
-            le.setPlaceholderText(placeholder)
-            form.addRow(f"{label}:", le)
-            widgets[label] = le
-        layout.addLayout(form)
-
-        btn_row = QHBoxLayout()
-        cancel = QPushButton("Cancel")
-        cancel.setStyleSheet("background-color: #252540;")
-        cancel.clicked.connect(dialog.close)
-        ok = QPushButton("OK")
-        ok.setStyleSheet("background-color: #7c3aed;")
-        result: dict[str, str] | None = None
-
-        def on_ok() -> None:
-            nonlocal result
-            result = {k: w.text() for k, w in widgets.items()}
-            dialog.close()
-
-        ok.clicked.connect(on_ok)
-        btn_row.addStretch(1)
-        btn_row.addWidget(cancel)
-        btn_row.addWidget(ok)
-        layout.addLayout(btn_row)
-        dialog.setLayout(layout)
-        dialog.exec()
-        return result
-
-    def _add_education(self) -> None:
-        result = self._show_entry_dialog("Add Education", [
-            ("Institution", "MIT"),
-            ("Degree", "B.S."),
-            ("Field", "Computer Science"),
-            ("Start Date", "2018-09"),
-            ("End Date", "2022-06"),
-        ])
-        if result and result.get("Institution"):
-            text = f"{result['Institution']} - {result['Degree']} in {result['Field']} ({result['Start Date']} - {result['End Date']})"
-            item = QListWidgetItem(text)
-            item.setData(Qt.ItemDataRole.UserRole, result)
-            self._edu_list.addItem(item)
-
-    def _add_experience(self) -> None:
-        result = self._show_entry_dialog("Add Experience", [
-            ("Company", "Google"),
-            ("Role", "Software Engineer"),
-            ("Description", "Worked on..."),
-            ("Start Date", "2022-07"),
-            ("End Date", "present"),
-        ])
-        if result and result.get("Company"):
-            text = f"{result['Role']} @ {result['Company']} ({result['Start Date']} - {result['End Date']})"
-            item = QListWidgetItem(text)
-            item.setData(Qt.ItemDataRole.UserRole, result)
-            self._exp_list.addItem(item)
-
-    def _remove_list_item(self, lst: QListWidget) -> None:
-        for item in lst.selectedItems():
-            lst.takeItem(lst.row(item))
-
-    # ── API operations ─────────────────────────────────────────────────
-
-    def _get_user_id(self) -> str | None:
-        uid = self._user_id_input.text().strip()
-        if not uid:
-            QMessageBox.warning(self, "Error", "Enter a User ID")
-            return None
-        return uid
-
-    def _load_profile(self) -> None:
-        QMessageBox.information(
-            self, "Info",
-            "Use 'Upload Resume' or 'Fill Manually' to create a new slot.",
-        )
-
     def _derive_name_from_parsed(self, data: dict[str, Any]) -> str:
         exp = data.get("experience") or []
         if exp and exp[0].get("role"):
@@ -1012,6 +1013,11 @@ class ProfilePage(PageWidget):
             name = name_suggestion or None
             if name and self._targeting_form._name:
                 self._targeting_form._name.setText(name)
+
+        if hasattr(self, "_delete_btn"):
+            self._delete_btn.setVisible(False)
+        if hasattr(self, "_back_btn"):
+            self._back_btn.setVisible(True)
 
         self._content_area.setVisible(True)
 

@@ -24,10 +24,17 @@ class SearchExecutor(PipelineStep):
         provider_name: str = "dummy",
         result_count: int = 10,
         enabled_plugins: list[str] | None = None,
+        secondary_providers: list[str] | None = None,
     ) -> None:
         self._provider_name = provider_name
         self._result_count = max(1, min(result_count, 50))
         self._registry = SearchRegistry.default()
+        self._secondary_providers: list[SearchProvider] = []
+        for name in (secondary_providers or []):
+            try:
+                self._secondary_providers.append(self._registry.get(name))
+            except KeyError:
+                logger.warning("Secondary provider '%s' not found, skipping", name)
         self._plugin_providers: list[SearchProvider] = []
         self._load_plugin_providers(enabled_plugins)
 
@@ -74,19 +81,40 @@ class SearchExecutor(PipelineStep):
 
         for query in queries:
             query_result_count = 0
+
+            # Primary provider
             try:
                 results = await provider.search(
                     query,
                     count=self._result_count,
                 )
-                query_result_count = len(results)
+                query_result_count += len(results)
                 for r in results:
                     if r.url and r.url not in seen_urls:
                         seen_urls.add(r.url)
                         all_results.append(r)
             except Exception as exc:
-                logger.warning("Search query '%s' failed: %s", query, exc)
+                logger.warning("Primary search query '%s' failed: %s", query, exc)
 
+            # Secondary providers (e.g. jobboards)
+            for secondary in self._secondary_providers:
+                try:
+                    sec_results = await secondary.search(
+                        query,
+                        count=self._result_count,
+                    )
+                    query_result_count += len(sec_results)
+                    for r in sec_results:
+                        if r.url and r.url not in seen_urls:
+                            seen_urls.add(r.url)
+                            all_results.append(r)
+                except Exception as exc:
+                    logger.warning(
+                        "Secondary provider '%s' failed for query '%s': %s",
+                        secondary.name, query, exc,
+                    )
+
+            # Plugin providers
             for plugin_provider in self._plugin_providers:
                 try:
                     enhanced_results = await plugin_provider.search(

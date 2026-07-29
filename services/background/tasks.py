@@ -83,6 +83,7 @@ def _pipeline_callback(
         bs = config.background_scheduler
         pconfig = PipelineConfig(
             search_provider=bs.pipeline_search_provider,
+            search_secondary_providers=["jobboards"],
             query_count=bs.pipeline_max_queries,
             search_result_count=bs.pipeline_max_results,
         )
