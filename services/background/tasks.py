@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from core.config import AppConfig
 from database.repositories.profile_repository import ProfileRepository
+from database.repositories.quota_state_repository import QuotaStateRepository
 from database.repositories.scheduler_state_repository import SchedulerStateRepository
 from database.repositories.user_repository import UserRepository
 from database.session import SessionLocal
@@ -193,6 +194,229 @@ def _check_and_log_missed_window(
         db.close()
 
 
+# ── Weekly job board sweep ─────────────────────────────────────────
+
+
+def _make_weekly_jobboard_run_condition(
+    user_id: uuid.UUID,
+    config: AppConfig,
+    session_factory: Callable[[], Session] | None = None,
+) -> Callable[[], bool]:
+    """Closure that evaluates whether the weekly job board sweep is due.
+
+    Runs once per week on the configured day-of-week and hour.
+    Uses scheduler_state with task_name="weekly_jobboard" to track
+    the last run date ( LOCAL calendar date ).
+    """
+
+    def condition() -> bool:
+        bs = config.background_scheduler
+        try:
+            tz = zoneinfo.ZoneInfo(bs.timezone)
+        except Exception as exc:
+            logger.error("Invalid timezone '%s': %s", bs.timezone, exc)
+            return False
+
+        now_local = datetime.now(tz)
+
+        # Only run on the configured day of week and hour
+        if now_local.weekday() != bs.weekly_jobboard_day_of_week:
+            return False
+        if now_local.hour != bs.weekly_jobboard_hour:
+            return False
+
+        # Check if already ran this week (same local calendar date)
+        db_factory = session_factory or SessionLocal
+        db = db_factory()
+        try:
+            repo = SchedulerStateRepository(db)
+            state = repo.get_by_user_and_task(
+                user_id, "weekly_jobboard", profile_id=None,
+            )
+            if state is not None and state.last_run_date == now_local.date():
+                return False
+            return True
+        finally:
+            db.close()
+
+    return condition
+
+
+def _weekly_jobboard_callback(
+    user_id: uuid.UUID,
+    config: AppConfig,
+    session_factory: Callable[[], Session] | None = None,
+) -> dict[str, Any] | None:
+    """Run the weekly job board sweep across all RapidAPI-backed providers.
+
+    This runs as a SEPARATE layer from the daily pipeline — it queries
+    job boards directly (bypassing the daily Tavily queries) and feeds
+    results into the same opportunity creation + scoring pipeline.
+    """
+    from services.job_boards.aggregator import JobBoardAggregator
+
+    bs = config.background_scheduler
+    db_factory = session_factory or SessionLocal
+    db = db_factory()
+    try:
+        # Build the aggregator (RapidAPI boards only, no legacy)
+        aggregator = JobBoardAggregator()
+
+        # Check quota for each provider and skip if below safety margin
+        quota_repo = QuotaStateRepository(db)
+        active_boards = {}
+        skipped = []
+        for name, board in aggregator.boards.items():
+            state = quota_repo.get_by_provider(name)
+            if state and state.remaining is not None and state.quota_limit is not None:
+                if state.quota_limit > 0 and state.remaining < (state.quota_limit * bs.weekly_jobboard_quota_safety_margin):
+                    skipped.append(name)
+                    logger.info(
+                        "Weekly sweep: skipping %s — quota %d/%d below safety margin %.0f%%",
+                        name, state.remaining, state.quota_limit,
+                        bs.weekly_jobboard_quota_safety_margin * 100,
+                    )
+                    continue
+            active_boards[name] = board
+
+        if not active_boards:
+            logger.warning("Weekly sweep: all providers skipped due to low quota")
+            return {"opportunities_created": 0, "providers_skipped": skipped}
+
+        # Load all profiles for this user to generate queries
+        profile_repo = ProfileRepository(db)
+        profiles = profile_repo.list_by_user_id(user_id)
+        if not profiles:
+            logger.warning("Weekly sweep: no profiles found for user %s", user_id)
+            return {"opportunities_created": 0, "providers_skipped": skipped}
+
+        # Generate queries from the first profile (or combine from all)
+        from services.search_pipeline.steps.query_generator_rules import RuleBasedQueryGenerator
+        qgen = RuleBasedQueryGenerator(query_count=bs.weekly_jobboard_max_queries)
+        all_queries: list[str] = []
+        for profile in profiles:
+            try:
+                import asyncio as _asyncio
+                ctx = {"profile": profile}
+                ctx = _asyncio.run(qgen.execute(ctx))
+                all_queries.extend(ctx.get("queries", []))
+            except Exception as exc:
+                logger.warning("Failed to generate queries for profile %s: %s", profile.id, exc)
+        # Deduplicate queries
+        all_queries = list(dict.fromkeys(all_queries))[:bs.weekly_jobboard_max_queries]
+
+        if not all_queries:
+            logger.warning("Weekly sweep: no queries generated from profiles")
+            return {"opportunities_created": 0, "providers_skipped": skipped}
+
+        logger.info(
+            "Weekly sweep: running %d queries across %d boards (skipped: %s)",
+            len(all_queries), len(active_boards), skipped,
+        )
+
+        # Run search across active boards
+        import asyncio
+        from services.job_boards.base import JobPosting
+
+        async def _search_all() -> list[JobPosting]:
+            tasks = [
+                board.search(all_queries, max_results=bs.weekly_jobboard_max_results)
+                for board in active_boards.values()
+            ]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            all_postings: list[JobPosting] = []
+            for result in results:
+                if isinstance(result, Exception):
+                    logger.warning("Weekly sweep board failed: %s", result)
+                    continue
+                if isinstance(result, list):
+                    all_postings.extend(result)
+            return all_postings
+
+        postings = asyncio.run(_search_all())
+
+        # Persist quota for all active boards
+        for board in active_boards.values():
+            try:
+                board.persist_quota(db)
+            except Exception as exc:
+                logger.warning("Failed to persist quota for %s: %s", board.name, exc)
+
+        # Feed through the same pipeline (OpportunityCreator + Scorer)
+        if postings:
+            # Convert JobPosting to SearchResult format for the pipeline
+            from services.search import SearchResult
+            search_results = []
+            for p in postings:
+                search_results.append(SearchResult(
+                    title=p.title,
+                    url=p.url,
+                    snippet=p.description[:300] if p.description else "",
+                    source=p.board,
+                    metadata={
+                        "company": p.company,
+                        "location": p.location,
+                        "salary": p.salary,
+                        "job_type": p.job_type,
+                        "skills": p.skills,
+                        "posted_date": p.posted_date.isoformat() if p.posted_date else None,
+                        "job_id": p.job_id,
+                        "weekly_sweep": True,
+                    },
+                ))
+
+            # Use the pipeline's OpportunityCreator directly
+            from services.search_pipeline.steps.opportunity_creator import OpportunityCreator
+            from services.search_pipeline.steps.content_extractor import ContentExtractorStep
+            from services.search_pipeline import PipelineContext
+
+            ctx: dict[str, Any] = {
+                "db": db,
+                "profile": profiles[0],
+                "search_results": search_results,
+                "queries": all_queries,
+            }
+
+            creator = OpportunityCreator()
+            ctx = asyncio.run(creator.execute(ctx))
+
+            created = ctx.get("opportunities_created", 0)
+            logger.info("Weekly sweep: created %d opportunities", created)
+
+            # Update scheduler state
+            tz = zoneinfo.ZoneInfo(bs.timezone)
+            now_local = datetime.now(tz)
+            state_repo = SchedulerStateRepository(db)
+            state_repo.update_last_run(
+                user_id, "weekly_jobboard",
+                run_date=now_local.date(),
+                profile_id=None,
+            )
+            db.commit()
+
+            return {
+                "opportunities_created": created,
+                "providers_skipped": skipped,
+                "queries_run": len(all_queries),
+                "postings_found": len(postings),
+            }
+
+        # No postings — still update state to avoid re-running
+        tz = zoneinfo.ZoneInfo(bs.timezone)
+        now_local = datetime.now(tz)
+        state_repo = SchedulerStateRepository(db)
+        state_repo.update_last_run(
+            user_id, "weekly_jobboard",
+            run_date=now_local.date(),
+            profile_id=None,
+        )
+        db.commit()
+        return {"opportunities_created": 0, "providers_skipped": skipped}
+
+    finally:
+        db.close()
+
+
 def create_and_start_scheduler(
     config: AppConfig,
     *,
@@ -282,6 +506,30 @@ def create_and_start_scheduler(
             "Registered digest task (interval=%ds, retries=%d)",
             bs_settings.digest_interval_seconds,
             bs_settings.digest_retry_count,
+        )
+
+    # ── weekly job board sweep ───────────────────────────────────────
+    if bs_settings.weekly_jobboard_enabled:
+        weekly_cond = _make_weekly_jobboard_run_condition(
+            uid, config, session_factory=session_factory,
+        )
+        weekly_task = ScheduledTask(
+            name="weekly_jobboard",
+            interval_seconds=3600,  # polls every hour; run_condition gates the actual execution
+            run_condition=weekly_cond,
+            callback=lambda: _weekly_jobboard_callback(
+                uid, config, session_factory=session_factory,
+            ),
+            max_retries=bs_settings.weekly_jobboard_retry_count,
+            retry_delay_base=float(bs_settings.weekly_jobboard_retry_delay_base),
+        )
+        scheduler.add_task(weekly_task)
+        logger.info(
+            "Registered weekly job board sweep (day=%d, hour=%d, retries=%d, quota_safety=%.0f%%)",
+            bs_settings.weekly_jobboard_day_of_week,
+            bs_settings.weekly_jobboard_hour,
+            bs_settings.weekly_jobboard_retry_count,
+            bs_settings.weekly_jobboard_quota_safety_margin * 100,
         )
 
     scheduler.start()

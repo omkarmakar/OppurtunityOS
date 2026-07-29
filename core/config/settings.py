@@ -249,6 +249,32 @@ class BackgroundSchedulerSettings(BaseModel):
     digest_retry_count: int = Field(default=2, ge=0, le=10)
     digest_retry_delay_base: int = Field(default=60, ge=1, le=600)
 
+    # Weekly job board sweep — runs once per week, separate from daily pipeline
+    weekly_jobboard_enabled: bool = Field(default=True, description="Enable weekly job board sweep via RapidAPI providers")
+    weekly_jobboard_day_of_week: int = Field(
+        default=0, ge=0, le=6,
+        description="Day of week for job board sweep (0=Monday, 6=Sunday)",
+    )
+    weekly_jobboard_hour: int = Field(
+        default=10, ge=0, le=23,
+        description="Local hour for weekly job board sweep",
+    )
+    weekly_jobboard_max_queries: int = Field(default=8, ge=1, le=20, description="Max queries per weekly sweep")
+    weekly_jobboard_max_results: int = Field(default=50, ge=1, le=200, description="Max results per board per query")
+    weekly_jobboard_retry_count: int = Field(default=2, ge=0, le=5)
+    weekly_jobboard_retry_delay_base: int = Field(default=60, ge=1, le=600)
+    weekly_jobboard_quota_safety_margin: float = Field(
+        default=0.1, ge=0.0, le=0.5,
+        description="Fraction of quota to reserve (skip provider if remaining < limit * safety_margin)",
+    )
+
+    # Old scraper fallback — disabled by default, kept as dormant fallback
+    enable_legacy_scrapers: bool = Field(
+        default=False,
+        description="Enable legacy web scrapers (Naukri, LinkedIn direct, Unstop) as fallback. "
+                    "Disabled by default — RapidAPI providers replaced them.",
+    )
+
 
 class MemorySettings(BaseModel):
     """ChromaDB vector memory configuration."""

@@ -87,6 +87,7 @@ class SettingsPage(PageWidget):
         self._main_layout.setSpacing(16)
 
         self._build_integrations_section()
+        self._build_jobboard_section()
         self._build_account_section()
         self._build_preferences_section()
         self._build_digest_section()
@@ -151,6 +152,43 @@ class SettingsPage(PageWidget):
         section = SettingsSection("Integrations")
         self._integration_container = QVBoxLayout()
         section.body().addLayout(self._integration_container)
+        self._main_layout.addWidget(section)
+
+    def _build_jobboard_section(self) -> None:
+        section = SettingsSection("Job Board APIs (RapidAPI)")
+        self._jobboard_container = QVBoxLayout()
+        section.body().addLayout(self._jobboard_container)
+
+        # Quota status row
+        quota_row = QHBoxLayout()
+        quota_row.setSpacing(8)
+        self._quota_status_lbl = QLabel("")
+        self._quota_status_lbl.setStyleSheet(
+            f"font-size: 11px; color: {TEXT_MUTED}; background: transparent;"
+        )
+        quota_row.addWidget(self._quota_status_lbl)
+        quota_row.addStretch()
+        self._refresh_quota_btn = QPushButton("Refresh Quota")
+        self._refresh_quota_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #2a2a44; color: {TEXT_BRIGHT}; border: none;
+                border-radius: 4px; padding: 4px 10px; font-size: 11px;
+            }}
+            QPushButton:hover {{ background-color: #3a3a5e; }}
+        """)
+        self._refresh_quota_btn.clicked.connect(self._load_jobboard_quota)
+        quota_row.addWidget(self._refresh_quota_btn)
+        section.body().addLayout(quota_row)
+
+        hint = QLabel(
+            "Each provider uses its own RapidAPI key (or falls back to the shared key). "
+            "Use 'Test Connection' to verify each provider works. "
+            "Quota shows remaining API calls for this billing cycle."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet(f"font-size: 11px; color: {TEXT_MUTED}; background: transparent;")
+        section.body().addWidget(hint)
+
         self._main_layout.addWidget(section)
 
     def _build_preferences_section(self) -> None:
@@ -363,6 +401,102 @@ class SettingsPage(PageWidget):
         self._load_system_settings()
         self._load_user_settings()
         self._load_user_email()
+        self._load_jobboard_quota()
+
+    def _load_jobboard_quota(self) -> None:
+        """Load quota status for all job board providers."""
+        try:
+            resp = httpx.get(f"{API_BASE}/settings/jobboards/quota", timeout=10)
+            if resp.status_code == 200:
+                quotas = resp.json()
+                self._render_jobboard_quotas(quotas)
+        except Exception:
+            self._quota_status_lbl.setText("Quota data unavailable")
+
+    def _render_jobboard_quotas(self, quotas: list[dict]) -> None:
+        """Render quota status rows in the jobboard section."""
+        # Clear existing rows (keep the hint and quota row)
+        while self._jobboard_container.count():
+            item = self._jobboard_container.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        if not quotas:
+            lbl = QLabel("No quota data yet — run a search to populate.")
+            lbl.setStyleSheet(f"font-size: 12px; color: {TEXT_MUTED}; background: transparent;")
+            self._jobboard_container.addWidget(lbl)
+            return
+
+        for q in quotas:
+            row = QHBoxLayout()
+            row.setSpacing(8)
+
+            name = q.get("provider_name", "unknown")
+            remaining = q.get("remaining")
+            limit = q.get("limit")
+
+            # Provider name
+            name_lbl = QLabel(name)
+            name_lbl.setStyleSheet(f"font-size: 12px; font-weight: 500; color: {TEXT_BRIGHT}; background: transparent;")
+            row.addWidget(name_lbl)
+
+            # Quota display
+            if remaining is not None and limit is not None:
+                pct = (remaining / limit * 100) if limit > 0 else 0
+                if pct > 50:
+                    color = GREEN
+                elif pct > 20:
+                    color = "#f59e0b"
+                else:
+                    color = RED
+                quota_lbl = QLabel(f"{remaining}/{limit} ({pct:.0f}%)")
+                quota_lbl.setStyleSheet(f"font-size: 12px; color: {color}; background: transparent;")
+            else:
+                quota_lbl = QLabel("No data")
+                quota_lbl.setStyleSheet(f"font-size: 12px; color: {TEXT_MUTED}; background: transparent;")
+            row.addWidget(quota_lbl)
+
+            # Test connection button
+            test_btn = QPushButton("Test")
+            test_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: #2a2a44; color: {TEXT_BRIGHT}; border: none;
+                    border-radius: 4px; padding: 3px 8px; font-size: 11px;
+                }}
+                QPushButton:hover {{ background-color: #3a3a5e; }}
+            """)
+            test_btn.clicked.connect(lambda checked, n=name: self._test_jobboard(n))
+            row.addWidget(test_btn)
+
+            row.addStretch()
+            self._jobboard_container.addLayout(row)
+
+    def _test_jobboard(self, provider_name: str) -> None:
+        """Test a job board provider connection."""
+        try:
+            resp = httpx.post(
+                f"{API_BASE}/settings/jobboards/test",
+                json={"provider_name": provider_name},
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("success"):
+                    self._quota_status_lbl.setStyleSheet(
+                        f"font-size: 12px; color: {GREEN}; background: transparent;"
+                    )
+                    self._quota_status_lbl.setText(data.get("message", "OK"))
+                else:
+                    self._quota_status_lbl.setStyleSheet(
+                        f"font-size: 12px; color: {RED}; background: transparent;"
+                    )
+                    self._quota_status_lbl.setText(data.get("message", "Failed"))
+                QTimer.singleShot(5000, lambda: self._quota_status_lbl.setText(""))
+        except Exception as exc:
+            self._quota_status_lbl.setStyleSheet(
+                f"font-size: 12px; color: {RED}; background: transparent;"
+            )
+            self._quota_status_lbl.setText(f"Error: {exc}")
 
     def _load_user_email(self) -> None:
         try:

@@ -17,6 +17,7 @@ from backend.schemas.settings import (
     SettingsResponse,
 )
 from core.config import AppConfig
+from core.secrets import get_secret
 
 router = APIRouter()
 
@@ -85,12 +86,37 @@ _INTEGRATIONS: list[tuple[str, str, str]] = [
     ("ollama", "", "No API key needed — set OOS_AI__OLLAMA_BASE_URL if not at localhost:11434"),
 ]
 
+# Job board RapidAPI providers — each has its own secret, fallback to shared rapidapi_key
+_JOBBOARD_INTEGRATIONS: list[tuple[str, str, str, str]] = [
+    # (name, secret_name, host, description)
+    ("JSearch (Google for Jobs)", "rapidapi_key_jsearch", "jsearch.p.rapidapi.com", "Aggregates from Indeed, LinkedIn, ZipRecruiter"),
+    ("Active Jobs DB (Fantastic.jobs)", "rapidapi_key_active_jobs_db", "active-jobs-db.p.rapidapi.com", "ATS job listings with skills, experience"),
+    ("LinkedIn Job Search (Fantastic.jobs)", "rapidapi_key_linkedin_jobs", "linkedin-job-search-api.p.rapidapi.com", "LinkedIn job board listings"),
+    ("Glassdoor Real-Time", "rapidapi_key_glassdoor", "real-time-glassdoor-data.p.rapidapi.com", "Glassdoor jobs + company interviews"),
+    ("Indeed (Mantiks)", "rapidapi_key_indeed", "indeed12.p.rapidapi.com", "Indeed search + company-targeted"),
+    ("Remote Jobs1", "rapidapi_key_remote_jobs", "remote-jobs1.p.rapidapi.com", "Remote ATS jobs (Workable, Ashby, etc.)"),
+]
+
 
 def _build_configuration_status(cfg: AppConfig) -> list[IntegrationStatus]:
     result: list[IntegrationStatus] = []
     for name, env_var, hint in _INTEGRATIONS:
         configured = _is_configured(name, cfg)
         result.append(IntegrationStatus(name=name, configured=configured, env_var=env_var, hint=hint))
+
+    # Add job board integrations
+    for name, secret_name, host, hint in _JOBBOARD_INTEGRATIONS:
+        # Check per-provider key first, then shared key
+        key = get_secret(secret_name) or get_secret("rapidapi_key")
+        configured = bool(key)
+        env_var = f"OOS_SECRETS_{secret_name.upper()}"
+        result.append(IntegrationStatus(
+            name=f"Job Board: {name}",
+            configured=configured,
+            env_var=env_var,
+            hint=f"{hint} ({host})",
+        ))
+
     return result
 
 
@@ -108,3 +134,80 @@ def _is_configured(name: str, cfg: AppConfig) -> bool:
     if name == "ollama":
         return True
     return False
+
+
+# ── Job board test connection & quota status ────────────────────────
+
+from pydantic import BaseModel
+
+
+class JobBoardTestRequest(BaseModel):
+    provider_name: str
+
+
+class JobBoardTestResponse(BaseModel):
+    provider_name: str
+    success: bool
+    message: str
+    results_count: int = 0
+
+
+class JobBoardQuotaResponse(BaseModel):
+    provider_name: str
+    remaining: int | None = None
+    limit: int | None = None
+    reset_at: float | None = None
+    last_updated: str | None = None
+
+
+@router.post("/settings/jobboards/test", response_model=JobBoardTestResponse)
+async def test_jobboard_connection(req: JobBoardTestRequest):
+    """Test a job board provider with a single cheap search call."""
+    from services.job_boards.aggregator import JobBoardAggregator
+    agg = JobBoardAggregator()
+    board = agg.get_board(req.provider_name)
+    if not board:
+        return JobBoardTestResponse(
+            provider_name=req.provider_name,
+            success=False,
+            message=f"Unknown provider: {req.provider_name}",
+        )
+    try:
+        import asyncio
+        results = await board.search(["software engineer"], max_results=1)
+        return JobBoardTestResponse(
+            provider_name=req.provider_name,
+            success=True,
+            message=f"Connected — returned {len(results)} result(s)",
+            results_count=len(results),
+        )
+    except Exception as exc:
+        return JobBoardTestResponse(
+            provider_name=req.provider_name,
+            success=False,
+            message=f"Error: {exc}",
+        )
+
+
+@router.get("/settings/jobboards/quota", response_model=list[JobBoardQuotaResponse])
+def get_jobboard_quota():
+    """Get quota status for all job board providers."""
+    from database.session import SessionLocal
+    from database.repositories.quota_state_repository import QuotaStateRepository
+
+    db = SessionLocal()
+    try:
+        repo = QuotaStateRepository(db)
+        states = repo.get_all_providers()
+        return [
+            JobBoardQuotaResponse(
+                provider_name=s.provider_name,
+                remaining=s.remaining,
+                limit=s.quota_limit,
+                reset_at=s.reset_at,
+                last_updated=s.last_updated_at.isoformat() if s.last_updated_at else None,
+            )
+            for s in states
+        ]
+    finally:
+        db.close()

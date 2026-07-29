@@ -7,28 +7,46 @@ import logging
 from typing import Any
 
 from services.job_boards.base import JobBoard, JobPosting
-from services.job_boards.linkedin import LinkedInJobBoard
-from services.job_boards.naukri import NaukriJobBoard
-from services.job_boards.unstop import UnstopJobBoard
+from services.job_boards.active_jobs_db_board import ActiveJobsDBBoard
+from services.job_boards.glassdoor_board import GlassdoorBoard
+from services.job_boards.indeed12_board import Indeed12Board
+from services.job_boards.jsearch_board import JSearchBoard
+from services.job_boards.linkedin_job_search_board import LinkedInJobSearchBoard
+from services.job_boards.remote_jobs1_board import RemoteJobs1Board
 
 logger = logging.getLogger(__name__)
+
+
+def _build_default_boards(include_legacy: bool = False) -> list[JobBoard]:
+    """Build the default board list. Legacy scrapers are opt-in via config."""
+    boards: list[JobBoard] = [
+        JSearchBoard(),
+        ActiveJobsDBBoard(),
+        LinkedInJobSearchBoard(),
+        GlassdoorBoard(),
+        Indeed12Board(),
+        RemoteJobs1Board(),
+    ]
+    if include_legacy:
+        from services.job_boards.linkedin import LinkedInJobBoard
+        from services.job_boards.naukri import NaukriJobBoard
+        from services.job_boards.unstop import UnstopJobBoard
+        boards.extend([NaukriJobBoard(), LinkedInJobBoard(), UnstopJobBoard()])
+    return boards
 
 
 class JobBoardAggregator:
     """Aggregates job postings from multiple job boards."""
     
-    def __init__(self, boards: list[JobBoard] | None = None):
+    def __init__(self, boards: list[JobBoard] | None = None, include_legacy: bool = False):
         """Initialize with job boards to use.
         
         Args:
             boards: List of JobBoard instances to aggregate. If None, uses default set.
+            include_legacy: If True and boards is None, includes legacy scrapers as fallback.
         """
         if boards is None:
-            boards = [
-                LinkedInJobBoard(),
-                NaukriJobBoard(),
-                UnstopJobBoard(),
-            ]
+            boards = _build_default_boards(include_legacy=include_legacy)
         self.boards = {board.name: board for board in boards}
     
     async def search_all(self, queries: list[str], max_results_per_board: int = 50) -> list[JobPosting]:
