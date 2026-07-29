@@ -8,14 +8,20 @@ from typing import Any
 import httpx
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QFileDialog,
+    QFormLayout,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QTabWidget,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -747,32 +753,12 @@ class ProfilePage(PageWidget):
             resp = httpx.post(f"{API_BASE}/resume/parse", files=files, timeout=30)
             resp.raise_for_status()
             data = resp.json()
+            data["_parsed_filename"] = file_path.name
 
-            if data.get("skills"):
-                self._skills.set_tags(data["skills"])
-            if data.get("education"):
-                self._edu_list.clear()
-                for e in data["education"]:
-                    text = f"{e.get('institution','')} - {e.get('degree','')} in {e.get('field','')} ({e.get('start_date','')} - {e.get('end_date','')})"
-                    item = QListWidgetItem(text)
-                    item.setData(Qt.ItemDataRole.UserRole, e)
-                    self._edu_list.addItem(item)
-            if data.get("experience"):
-                self._exp_list.clear()
-                for e in data["experience"]:
-                    text = f"{e.get('role','')} @ {e.get('company','')} ({e.get('start_date','')} - {e.get('end_date','')})"
-                    item = QListWidgetItem(text)
-                    item.setData(Qt.ItemDataRole.UserRole, e)
-                    self._exp_list.addItem(item)
-            if data.get("projects"):
-                for p in data["projects"]:
-                    text = f"[Project] {p.get('name','')} - {p.get('technologies','')}"
-                    item = QListWidgetItem(text)
-                    item.setData(Qt.ItemDataRole.UserRole, p)
-                    self._exp_list.addItem(item)
-
-            # Show detailed parsed data dialog
             self._show_parsed_data_dialog(data)
+
+            name_suggestion = self._derive_name_from_parsed(data)
+            self._show_create_form(data, name_suggestion)
         except httpx.HTTPError as e:
             QMessageBox.critical(self, "Error", f"Parse failed:\n{e}")
 
@@ -986,22 +972,10 @@ class ProfilePage(PageWidget):
         return uid
 
     def _load_profile(self) -> None:
-        uid = self._get_user_id()
-        if not uid:
-            return
-
-        partial: dict[str, Any] = {}
-        if data.get("skills"):
-            partial["skills"] = data["skills"]
-        if data.get("education"):
-            partial["education"] = data["education"]
-        if data.get("experience"):
-            partial["experience"] = data["experience"]
-        if data.get("projects"):
-            partial["projects"] = data["projects"]
-
-        name_suggestion = self._derive_name_from_parsed(data)
-        self._show_create_form(partial, name_suggestion)
+        QMessageBox.information(
+            self, "Info",
+            "Use 'Upload Resume' or 'Fill Manually' to create a new slot.",
+        )
 
     def _derive_name_from_parsed(self, data: dict[str, Any]) -> str:
         exp = data.get("experience") or []
@@ -1023,6 +997,15 @@ class ProfilePage(PageWidget):
         self._content_area.setVisible(False)
 
         self._build_content()
+
+        parsed_data = {
+            "skills": prefill.get("skills"),
+            "education": prefill.get("education"),
+            "experience": prefill.get("experience"),
+            "projects": prefill.get("projects"),
+        }
+        self._rebuild_parsed_data(parsed_data)
+
         if self._targeting_form:
             self._targeting_form.set_slot_id(None)
             self._targeting_form.populate(prefill)

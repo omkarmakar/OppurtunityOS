@@ -78,8 +78,6 @@ class NotificationRepository(BaseRepository[Notification]):
         )
         if profile_id is not None:
             stmt = stmt.where(Notification.profile_id == profile_id)
-        else:
-            stmt = stmt.where(Notification.profile_id.is_(None))
         return list(self._session.scalars(stmt).all())
 
     def list_by_digest(self, digest_id: uuid.UUID) -> list[Notification]:
