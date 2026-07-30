@@ -1,8 +1,9 @@
 """Tavily Search API provider.
 
 Tavily (https://tavily.com) is an AI-focused search API with a recurring
-free tier (1,000 credits/month as of 2026), making it the preferred
-replacement for Brave Search whose free tier was discontinued in Feb 2026.
+free tier (1,000 credits/month as of 2026), making it the primary
+general-web-search backend. Brave Search was removed — its free tier
+was discontinued in Feb 2026.
 
 API notes (verified against https://docs.tavily.com/documentation/api-reference/endpoint/search):
 - Endpoint: POST https://api.tavily.com/search
@@ -26,9 +27,9 @@ from services.search.models import SearchResult
 from services.search.provider import SearchProvider
 
 # Tavily's content field is an NLP summary; basic depth returns one
-# summary per URL capped around 400-500 characters — comparable to
-# Brave's description field.  We truncate conservatively to 500 chars
-# so downstream prompt assembly has predictable sizes.
+# summary per URL capped around 400-500 characters.  We truncate
+# conservatively to 500 chars so downstream prompt assembly has
+# predictable sizes.
 _SNIPPET_MAX_CHARS = 500
 
 
@@ -36,8 +37,8 @@ class TavilySearchProvider(SearchProvider):
     """Search provider backed by the Tavily Search API.
 
     Constructor reads ``tavily.api_key`` and ``tavily.base_url`` from
-    the application config, exactly mirroring the BraveSearchProvider
-    pattern.  Pass *api_key* explicitly to override (useful in tests).
+    the application config.  Pass *api_key* explicitly to override
+    (useful in tests).
     """
 
     def __init__(self, api_key: str | None = None) -> None:

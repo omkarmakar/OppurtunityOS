@@ -71,16 +71,6 @@ class ServerSettings(BaseModel):
         return v
 
 
-class BraveSearchSettings(BaseModel):
-    """Brave Search API configuration."""
-
-    api_key: str = Field(default="", description="Brave Search API key")
-    base_url: str = Field(
-        default="https://api.search.brave.com/res/v1/web/search",
-        description="Brave Search API endpoint",
-    )
-
-
 class TavilySettings(BaseModel):
     """Tavily Search API configuration."""
 
@@ -329,7 +319,6 @@ class AppConfig(BaseSettings):
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     server: ServerSettings = Field(default_factory=ServerSettings)
-    brave_search: BraveSearchSettings = Field(default_factory=BraveSearchSettings)
     tavily: TavilySettings = Field(default_factory=TavilySettings)
     ai: AISettings = Field(default_factory=AISettings)
     plugins: PluginSettings = Field(default_factory=PluginSettings)

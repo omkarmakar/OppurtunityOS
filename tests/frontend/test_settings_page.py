@@ -46,7 +46,7 @@ class TestSettingsPage:
     def test_default_sp(self, qtbot: QtBot) -> None:
         page = SettingsPage()
         qtbot.add_widget(page)
-        assert page._sp_combo.currentText() == "dummy"
+        assert page._sp_combo.currentText() == "tavily"
 
     def test_default_queries(self, qtbot: QtBot) -> None:
         page = SettingsPage()
@@ -63,7 +63,7 @@ class TestSettingsPage:
         qtbot.add_widget(page)
         page._system_settings = {
             "configuration_status": [
-                {"name": "brave_search", "configured": True, "env_var": "OOS_BRAVE_SEARCH__API_KEY", "hint": ""},
+                {"name": "tavily", "configured": True, "env_var": "OOS_TAVILY__API_KEY", "hint": ""},
                 {"name": "openai", "configured": False, "env_var": "OOS_AI__OPENAI_API_KEY", "hint": "Get a key"},
             ],
         }

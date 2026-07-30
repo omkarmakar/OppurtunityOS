@@ -353,7 +353,7 @@ def _weekly_jobboard_callback(
                     url=p.url,
                     snippet=p.description[:300] if p.description else "",
                     source=p.board,
-                    metadata={
+                    raw={
                         "company": p.company,
                         "location": p.location,
                         "salary": p.salary,

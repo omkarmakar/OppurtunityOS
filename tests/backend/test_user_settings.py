@@ -41,7 +41,7 @@ class TestUserSettings:
                 "theme": "dark",
                 "language": "fr",
                 "notifications_enabled": False,
-                "default_search_provider": "brave",
+                "default_search_provider": "tavily",
                 "default_max_queries": 10,
                 "default_max_results": 25,
             },
@@ -51,7 +51,7 @@ class TestUserSettings:
         assert data["theme"] == "dark"
         assert data["language"] == "fr"
         assert data["notifications_enabled"] is False
-        assert data["default_search_provider"] == "brave"
+        assert data["default_search_provider"] == "tavily"
         assert data["default_max_queries"] == 10
         assert data["default_max_results"] == 25
 

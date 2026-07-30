@@ -1,11 +1,21 @@
-"""Search provider registry — plugin discovery and management."""
+"""Search provider registry — plugin discovery and management.
+
+Brave Search was removed (2026-07-30): free tier discontinued Feb 2026.
+Tavily is the general-web-search provider; it excels at company career
+page hits (Google Careers, Ashby, Lever, Greenhouse) that RapidAPI job
+boards don't cover. Note: Tavily does NOT support boolean OR — split
+multi-site queries into separate calls instead.
+
+JobBoardProvider reads from the weekly-cached RapidAPI store (no live
+calls on ad-hoc search). Live pulls are gated behind search_live()
+with quota warnings.
+"""
 
 from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
 
-from services.search.brave_provider import BraveSearchProvider
 from services.search.dummy_provider import DummyProvider
 from services.search.jobboard_provider import JobBoardProvider
 from services.search.provider import SearchProvider
@@ -23,7 +33,7 @@ class SearchRegistry:
 
     Usage::
         registry = SearchRegistry()
-        provider = registry.get("brave")
+        provider = registry.get("tavily")
         results = await provider.search("python jobs")
     """
 
@@ -49,13 +59,9 @@ class SearchRegistry:
         registry.register(DummyProvider())
         try:
             registry.register(JobBoardProvider())
-            logger.debug("JobBoardProvider registered for real job board searches")
+            logger.debug("JobBoardProvider registered for cached job board searches")
         except Exception as exc:
             logger.debug("JobBoardProvider not available: %s", exc)
-        try:
-            registry.register(BraveSearchProvider())
-        except Exception as exc:
-            logger.debug("BraveSearchProvider not available: %s", exc)
         try:
             registry.register(TavilySearchProvider())
         except Exception as exc:

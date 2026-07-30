@@ -8,7 +8,6 @@ from typing import Any
 
 from services.job_boards.base import JobBoard, JobPosting
 from services.job_boards.active_jobs_db_board import ActiveJobsDBBoard
-from services.job_boards.glassdoor_board import GlassdoorBoard
 from services.job_boards.indeed12_board import Indeed12Board
 from services.job_boards.jsearch_board import JSearchBoard
 from services.job_boards.linkedin_job_search_board import LinkedInJobSearchBoard
@@ -23,7 +22,10 @@ def _build_default_boards(include_legacy: bool = False) -> list[JobBoard]:
         JSearchBoard(),
         ActiveJobsDBBoard(),
         LinkedInJobSearchBoard(),
-        GlassdoorBoard(),
+        # GlassdoorBoard disabled — requires separate RapidAPI subscription
+        # (returned 403 on 2026-07-29). Reserved for future interview-data
+        # enrichment, not active job search.
+        # GlassdoorBoard(),
         Indeed12Board(),
         RemoteJobs1Board(),
     ]

@@ -1,17 +1,21 @@
 """Shared base for bundled finder plugins.
 
 BundledSearchProvider is a mixin that lazily resolves the configured
-search provider (Brave → Dummy fallback) so each plugin only needs
+search provider (Tavily → Dummy fallback) so each plugin only needs
 to override the ``name`` property and ``_enhance_query()``.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
+from core.config import get_config
 from services.search.models import SearchResult
 from services.search.provider import SearchProvider
 from services.search.registry import SearchRegistry
+
+logger = logging.getLogger(__name__)
 
 
 class BundledSearchProvider(SearchProvider):
@@ -31,10 +35,17 @@ class BundledSearchProvider(SearchProvider):
     async def _resolve_inner(self) -> SearchProvider:
         if self._inner is not None:
             return self._inner
+        cfg = get_config()
+        default_provider = cfg.pipeline_search_provider or "tavily"
         registry = SearchRegistry.default()
         try:
-            self._inner = registry.get("brave")
+            self._inner = registry.get(default_provider)
         except KeyError:
+            logger.warning(
+                "Configured search provider %r not available; falling back to dummy. "
+                "Set pipeline_search_provider to a registered provider.",
+                default_provider,
+            )
             self._inner = registry.get("dummy")
         return self._inner
 

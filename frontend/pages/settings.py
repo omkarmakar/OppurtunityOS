@@ -269,7 +269,7 @@ class SettingsPage(PageWidget):
         sp_row.addWidget(sp_lbl)
         sp_row.addStretch()
         self._sp_combo = QComboBox()
-        self._sp_combo.addItems(["tavily"])
+        self._sp_combo.addItems(["tavily", "dummy"])
         self._sp_combo.setStyleSheet(f"""
             QComboBox {{
                 background-color: #2a2a44; color: {TEXT_BRIGHT}; border: none;

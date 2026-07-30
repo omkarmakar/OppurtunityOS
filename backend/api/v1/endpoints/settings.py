@@ -78,7 +78,7 @@ def get_settings(cfg: AppConfig = Depends(get_app_config)) -> SettingsResponse:
 
 
 _INTEGRATIONS: list[tuple[str, str, str]] = [
-    ("brave_search", "OOS_BRAVE_SEARCH__API_KEY", "Get a key at https://brave.com/search/api/"),
+    ("tavily", "OOS_TAVILY__API_KEY", "Get a key at https://tavily.com"),
     ("openai", "OOS_AI__OPENAI_API_KEY", "Get a key at https://platform.openai.com/api-keys"),
     ("gemini", "OOS_AI__GEMINI_API_KEY", "Get a key at https://aistudio.google.com/apikey"),
     ("openrouter", "OOS_AI__OPENROUTER_API_KEY", "Get a key at https://openrouter.ai/settings/keys"),
@@ -121,8 +121,8 @@ def _build_configuration_status(cfg: AppConfig) -> list[IntegrationStatus]:
 
 
 def _is_configured(name: str, cfg: AppConfig) -> bool:
-    if name == "brave_search":
-        return bool(cfg.brave_search.api_key)
+    if name == "tavily":
+        return bool(cfg.tavily.api_key)
     if name == "openai":
         return bool(cfg.ai.openai_api_key)
     if name == "gemini":
