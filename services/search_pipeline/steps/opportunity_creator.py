@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -12,9 +13,39 @@ from database.models.opportunities import Opportunity
 from database.repositories.opportunity_repository import OpportunityRepository
 from services.search_pipeline.date_parser import extract_metadata
 from services.search_pipeline.dedup import is_duplicate_by_company_title, merge_sources
+from services.search_pipeline.filters import is_quality_job_url
 from services.search_pipeline.steps.base import PipelineStep
 
 logger = logging.getLogger(__name__)
+
+# Patterns that indicate non-job content in titles
+_NON_JOB_TITLE_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"^Q:\s*", re.IGNORECASE),
+    re.compile(r"^(How|What|Why|When|Where)\s+(to|is|are|do|does|can|should)", re.IGNORECASE),
+    re.compile(r"^(Guide|Tips|Advice|Tutorial|Explanation)\s*[:\-]", re.IGNORECASE),
+    re.compile(r"\b(difference between|vs\.?|compared to)\b", re.IGNORECASE),
+]
+
+
+def _is_quality_opportunity(title: str, url: str, description: str) -> bool:
+    """Quick quality check before creating an opportunity.
+
+    Returns False for Q&A pages, advice articles, listing pages, etc.
+    """
+    # URL quality check
+    if not is_quality_job_url(url, title):
+        return False
+
+    # Title quality check
+    for pattern in _NON_JOB_TITLE_PATTERNS:
+        if pattern.search(title):
+            return False
+
+    # Description too short to be a real job
+    if description and len(description.strip()) < 20:
+        return False
+
+    return True
 
 
 class OpportunityCreator(PipelineStep):
@@ -34,6 +65,7 @@ class OpportunityCreator(PipelineStep):
         profile = ctx.get("profile")
         opportunities: list[Opportunity] = []
         skipped = 0
+        filtered = 0
 
         for item in extracted:
             search_result = item.get("search_result")
@@ -45,6 +77,12 @@ class OpportunityCreator(PipelineStep):
             title = search_result.title or (content.title if content else "") or "Untitled"
             url = search_result.url or (content.source_url if content else "") or ""
             description = content.content if content and content.content else search_result.snippet
+
+            # Quality filter — skip Q&A, advice, listing pages
+            if not _is_quality_opportunity(title, url, description):
+                filtered += 1
+                logger.debug("Filtered low-quality opportunity: %s (%s)", title, url)
+                continue
 
             # Stage 1: Dedup by exact URL (fast)
             if url:
@@ -90,6 +128,13 @@ class OpportunityCreator(PipelineStep):
             
             self._repo.add(opp)
             opportunities.append(opp)
+
+        if filtered:
+            logger.info(
+                "OpportunityCreator: filtered %d low-quality results, "
+                "created %d opportunities (%d deduped)",
+                filtered, len(opportunities) - skipped, skipped,
+            )
 
         ctx["opportunities"] = opportunities
         ctx["opportunities_skipped_duplicate"] = skipped
